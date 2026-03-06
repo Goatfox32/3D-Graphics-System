@@ -1,3 +1,8 @@
 Makefile
 build/
 graphics_system.qsf.bak
+db/
+incremental_db/
+*.qws
+output_files/
+simulation/
