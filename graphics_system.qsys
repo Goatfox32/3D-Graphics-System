@@ -17,19 +17,43 @@
          type = "int";
       }
    }
+   element cmd_addr
+   {
+      datum _sortIndex
+      {
+         value = "4";
+         type = "int";
+      }
+   }
+   element cmd_size
+   {
+      datum _sortIndex
+      {
+         value = "5";
+         type = "int";
+      }
+   }
+   element gpu_control
+   {
+      datum _sortIndex
+      {
+         value = "2";
+         type = "int";
+      }
+   }
+   element gpu_status
+   {
+      datum _sortIndex
+      {
+         value = "3";
+         type = "int";
+      }
+   }
    element hps_0
    {
       datum _sortIndex
       {
          value = "1";
-         type = "int";
-      }
-   }
-   element pio
-   {
-      datum _sortIndex
-      {
-         value = "2";
          type = "int";
       }
    }
@@ -56,18 +80,98 @@
  <instanceScript></instanceScript>
  <interface name="clk50" internal="clk_0.clk_in" type="clock" dir="end" />
  <interface name="clk_reset" internal="clk_0.clk_in_reset" type="reset" dir="end" />
- <interface name="hps_io" internal="hps_0.hps_io" type="conduit" dir="end" />
- <interface name="memory" internal="hps_0.memory" type="conduit" dir="end" />
  <interface
-   name="pio_export"
-   internal="pio.external_connection"
+   name="cmd_addr_export"
+   internal="cmd_addr.external_connection"
    type="conduit"
    dir="end" />
+ <interface
+   name="cmd_size_export"
+   internal="cmd_size.external_connection"
+   type="conduit"
+   dir="end" />
+ <interface
+   name="f2h_sdram0"
+   internal="hps_0.f2h_sdram0_data"
+   type="avalon"
+   dir="end" />
+ <interface
+   name="gpu_control_export"
+   internal="gpu_control.external_connection"
+   type="conduit"
+   dir="end" />
+ <interface
+   name="gpu_status_export"
+   internal="gpu_status.external_connection"
+   type="conduit"
+   dir="end" />
+ <interface name="hps_io" internal="hps_0.hps_io" type="conduit" dir="end" />
+ <interface name="memory" internal="hps_0.memory" type="conduit" dir="end" />
  <module name="clk_0" kind="clock_source" version="24.1" enabled="1">
   <parameter name="clockFrequency" value="50000000" />
   <parameter name="clockFrequencyKnown" value="true" />
   <parameter name="inputClockFrequency" value="0" />
   <parameter name="resetSynchronousEdges" value="NONE" />
+ </module>
+ <module name="cmd_addr" kind="altera_avalon_pio" version="24.1" enabled="1">
+  <parameter name="bitClearingEdgeCapReg" value="false" />
+  <parameter name="bitModifyingOutReg" value="false" />
+  <parameter name="captureEdge" value="false" />
+  <parameter name="clockRate" value="50000000" />
+  <parameter name="direction" value="Output" />
+  <parameter name="edgeType" value="RISING" />
+  <parameter name="generateIRQ" value="false" />
+  <parameter name="irqType" value="LEVEL" />
+  <parameter name="resetValue" value="0" />
+  <parameter name="simDoTestBenchWiring" value="false" />
+  <parameter name="simDrivenValue" value="0" />
+  <parameter name="width" value="32" />
+ </module>
+ <module name="cmd_size" kind="altera_avalon_pio" version="24.1" enabled="1">
+  <parameter name="bitClearingEdgeCapReg" value="false" />
+  <parameter name="bitModifyingOutReg" value="false" />
+  <parameter name="captureEdge" value="false" />
+  <parameter name="clockRate" value="50000000" />
+  <parameter name="direction" value="Output" />
+  <parameter name="edgeType" value="RISING" />
+  <parameter name="generateIRQ" value="false" />
+  <parameter name="irqType" value="LEVEL" />
+  <parameter name="resetValue" value="0" />
+  <parameter name="simDoTestBenchWiring" value="false" />
+  <parameter name="simDrivenValue" value="0" />
+  <parameter name="width" value="32" />
+ </module>
+ <module
+   name="gpu_control"
+   kind="altera_avalon_pio"
+   version="24.1"
+   enabled="1">
+  <parameter name="bitClearingEdgeCapReg" value="false" />
+  <parameter name="bitModifyingOutReg" value="false" />
+  <parameter name="captureEdge" value="false" />
+  <parameter name="clockRate" value="50000000" />
+  <parameter name="direction" value="Output" />
+  <parameter name="edgeType" value="RISING" />
+  <parameter name="generateIRQ" value="false" />
+  <parameter name="irqType" value="LEVEL" />
+  <parameter name="resetValue" value="0" />
+  <parameter name="simDoTestBenchWiring" value="false" />
+  <parameter name="simDrivenValue" value="0" />
+  <parameter name="width" value="8" />
+ </module>
+ <module name="gpu_status" kind="altera_avalon_pio" version="24.1" enabled="1">
+  <parameter name="bitClearingEdgeCapReg" value="false" />
+  <parameter name="bitModifyingOutReg" value="false" />
+  <parameter name="captureEdge" value="false" />
+  <parameter name="clockRate" value="50000000" />
+  <parameter name="direction" value="Input" />
+  <parameter name="edgeType" value="RISING" />
+  <parameter name="generateIRQ" value="true" />
+  <parameter name="irqType" value="LEVEL" />
+  <parameter name="resetValue" value="0" />
+  <parameter name="simDoTestBenchWiring" value="false" />
+  <parameter name="simDrivenValue" value="0" />
+  <parameter name="width" value="8" />
  </module>
  <module name="hps_0" kind="altera_hps" version="24.1" enabled="1">
   <parameter name="ABSTRACT_REAL_COMPARE_TEST" value="false" />
@@ -165,7 +269,7 @@
   <parameter name="ENABLE_USER_ECC" value="false" />
   <parameter name="EXPORT_AFI_HALF_CLK" value="false" />
   <parameter name="EXTRA_SETTINGS" value="" />
-  <parameter name="F2H_AXI_CLOCK_FREQ" value="50000000" />
+  <parameter name="F2H_AXI_CLOCK_FREQ" value="100" />
   <parameter name="F2H_SDRAM0_CLOCK_FREQ" value="50000000" />
   <parameter name="F2H_SDRAM1_CLOCK_FREQ" value="100" />
   <parameter name="F2H_SDRAM2_CLOCK_FREQ" value="100" />
@@ -179,10 +283,10 @@
   <parameter name="F2SCLK_SDRAMCLK_Enable" value="false" />
   <parameter name="F2SCLK_SDRAMCLK_FREQ" value="0" />
   <parameter name="F2SCLK_WARMRST_Enable" value="false" />
-  <parameter name="F2SDRAM_Type" value="AXI-3" />
+  <parameter name="F2SDRAM_Type" value="Avalon-MM Read-Only" />
   <parameter name="F2SDRAM_Width" value="64" />
   <parameter name="F2SINTERRUPT_Enable" value="false" />
-  <parameter name="F2S_Width" value="2" />
+  <parameter name="F2S_Width" value="0" />
   <parameter name="FIX_READ_LATENCY" value="8" />
   <parameter name="FORCED_NON_LDC_ADDR_CMD_MEM_CK_INVERT" value="false" />
   <parameter name="FORCED_NUM_WRITE_FR_CYCLE_SHIFTS" value="0" />
@@ -220,7 +324,7 @@
   <parameter name="FPGA_PERIPHERAL_OUTPUT_CLOCK_FREQ_SPIM1_SCLK_OUT" value="100" />
   <parameter name="GPIO_Enable">No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No,No</parameter>
   <parameter name="GP_Enable" value="false" />
-  <parameter name="H2F_AXI_CLOCK_FREQ" value="50000000" />
+  <parameter name="H2F_AXI_CLOCK_FREQ" value="100" />
   <parameter name="H2F_CTI_CLOCK_FREQ" value="100" />
   <parameter name="H2F_DEBUG_APB_CLOCK_FREQ" value="100" />
   <parameter name="H2F_LW_AXI_CLOCK_FREQ" value="50000000" />
@@ -441,7 +545,7 @@
   <parameter name="S2FINTERRUPT_UART_Enable" value="false" />
   <parameter name="S2FINTERRUPT_USB_Enable" value="false" />
   <parameter name="S2FINTERRUPT_WATCHDOG_Enable" value="false" />
-  <parameter name="S2F_Width" value="2" />
+  <parameter name="S2F_Width" value="0" />
   <parameter name="SDIO_Mode" value="4-bit Data" />
   <parameter name="SDIO_PinMuxing" value="HPS I/O Set 0" />
   <parameter name="SEQUENCER_TYPE" value="NIOS" />
@@ -599,35 +703,46 @@
   <parameter name="usb_mp_clk_div" value="0" />
   <parameter name="use_default_mpu_clk" value="true" />
  </module>
- <module name="pio" kind="altera_avalon_pio" version="24.1" enabled="1">
-  <parameter name="bitClearingEdgeCapReg" value="false" />
-  <parameter name="bitModifyingOutReg" value="false" />
-  <parameter name="captureEdge" value="false" />
-  <parameter name="clockRate" value="50000000" />
-  <parameter name="direction" value="Output" />
-  <parameter name="edgeType" value="RISING" />
-  <parameter name="generateIRQ" value="false" />
-  <parameter name="irqType" value="LEVEL" />
-  <parameter name="resetValue" value="0" />
-  <parameter name="simDoTestBenchWiring" value="false" />
-  <parameter name="simDrivenValue" value="0" />
-  <parameter name="width" value="8" />
- </module>
  <connection
    kind="avalon"
    version="24.1"
    start="hps_0.h2f_lw_axi_master"
-   end="pio.s1">
+   end="gpu_control.s1">
+  <parameter name="arbitrationPriority" value="1" />
+  <parameter name="baseAddress" value="0x0020" />
+  <parameter name="defaultConnection" value="false" />
+ </connection>
+ <connection
+   kind="avalon"
+   version="24.1"
+   start="hps_0.h2f_lw_axi_master"
+   end="gpu_status.s1">
+  <parameter name="arbitrationPriority" value="1" />
+  <parameter name="baseAddress" value="0x0030" />
+  <parameter name="defaultConnection" value="false" />
+ </connection>
+ <connection
+   kind="avalon"
+   version="24.1"
+   start="hps_0.h2f_lw_axi_master"
+   end="cmd_addr.s1">
   <parameter name="arbitrationPriority" value="1" />
   <parameter name="baseAddress" value="0x0000" />
   <parameter name="defaultConnection" value="false" />
  </connection>
- <connection kind="clock" version="24.1" start="clk_0.clk" end="pio.clk" />
  <connection
-   kind="clock"
+   kind="avalon"
    version="24.1"
-   start="clk_0.clk"
-   end="hps_0.f2h_axi_clock" />
+   start="hps_0.h2f_lw_axi_master"
+   end="cmd_size.s1">
+  <parameter name="arbitrationPriority" value="1" />
+  <parameter name="baseAddress" value="0x0010" />
+  <parameter name="defaultConnection" value="false" />
+ </connection>
+ <connection kind="clock" version="24.1" start="clk_0.clk" end="gpu_control.clk" />
+ <connection kind="clock" version="24.1" start="clk_0.clk" end="gpu_status.clk" />
+ <connection kind="clock" version="24.1" start="clk_0.clk" end="cmd_addr.clk" />
+ <connection kind="clock" version="24.1" start="clk_0.clk" end="cmd_size.clk" />
  <connection
    kind="clock"
    version="24.1"
@@ -637,13 +752,27 @@
    kind="clock"
    version="24.1"
    start="clk_0.clk"
-   end="hps_0.h2f_axi_clock" />
- <connection
-   kind="clock"
-   version="24.1"
-   start="clk_0.clk"
    end="hps_0.h2f_lw_axi_clock" />
- <connection kind="reset" version="24.1" start="clk_0.clk_reset" end="pio.reset" />
+ <connection
+   kind="reset"
+   version="24.1"
+   start="clk_0.clk_reset"
+   end="gpu_control.reset" />
+ <connection
+   kind="reset"
+   version="24.1"
+   start="clk_0.clk_reset"
+   end="gpu_status.reset" />
+ <connection
+   kind="reset"
+   version="24.1"
+   start="clk_0.clk_reset"
+   end="cmd_addr.reset" />
+ <connection
+   kind="reset"
+   version="24.1"
+   start="clk_0.clk_reset"
+   end="cmd_size.reset" />
  <connection
    kind="reset"
    version="24.1"
