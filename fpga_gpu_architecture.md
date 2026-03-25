@@ -5,6 +5,11 @@
 
 ---
 
+## Resources
+
+ - https://malt.zendesk.com/hc/en-us/articles/36662109888537-Beginner-s-Guide-to-SoC-How-to-access-between-HPS-FPGA-Cyclone-V-SoC-Arria-V-SoC
+- https://github.com/zangman/de10-nano/blob/master/docs/FPGA-SDRAM-Communication_-Avalon-MM-Agent-Slave-Trigger-Component.md
+
 ## 1. System Overview
 
 A triangle-rasterization GPU implemented in FPGA fabric, controlled by an ARM Linux HPS over the SoC's internal bridges. The HPS acts as the application CPU — it builds command buffers in DDR3 memory and signals the GPU via control registers. The FPGA GPU reads those commands, rasterizes triangles into a local framebuffer in block RAM, and streams pixels to a VGA display.
