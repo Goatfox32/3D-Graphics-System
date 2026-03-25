@@ -48,7 +48,7 @@ module graphics_system_top (
     logic [31:0] cmd_addr_internal;
     logic [31:0] cmd_size_internal;
 
-    assign LED = gpu_control_internal;
+    assign LED = gpu_status_internal;
 
     // ==========================================
     // F2H SDRAM0 wires
@@ -72,7 +72,8 @@ module graphics_system_top (
         .clk               (clk50),
         .reset_n           (s1),
         .start             (gpu_control_internal[0]),
-        .read_addr         (cmd_addr_internal),
+        .read_addr         (cmd_addr_internal[28:0]),
+        .read_size         (cmd_size_internal[7:0]),
         .avm_address       (f2h_sdram0_address),
         .avm_read          (f2h_sdram0_read),
         .avm_burstcount    (f2h_sdram0_burstcount),

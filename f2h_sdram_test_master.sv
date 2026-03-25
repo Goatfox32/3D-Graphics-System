@@ -1,12 +1,10 @@
-// Something about this module destablizes the LW bridge
-// Needs debugging
-
 module f2h_sdram_test_master (
     input  logic        clk,
     input  logic        reset_n,
 
     input  logic        start,
-    input  logic [31:0] read_addr,
+    input  logic [28:0] read_addr,
+    input  logic [7:0]  read_size,
 
     output logic [28:0] avm_address,
     output logic        avm_read,
@@ -18,81 +16,104 @@ module f2h_sdram_test_master (
     output logic [7:0]  result,
     output logic        done
 );
+    
+    enum logic [1:0] { IDLE, WAIT_REQ, READ_DATA, EXTRA_BEATS} 
+                 state, next_state;
 
-    typedef enum logic [2:0] {
-        STARTUP,
-        IDLE,
-        READ_REQ,
-        READ_WAIT,
-        COMPLETE
-    } state_t;
+    logic [28:0] next_address;
+    logic        next_read;
+    logic [7:0]  next_burst;
 
-    state_t      state;
-    logic        start_prev;
-    logic [3:0]  startup_count;
+    logic        next_done;
+    logic [7:0]  next_result;
 
-    always_ff @(posedge clk or negedge reset_n) begin
+    logic [7:0]  beats_remaining;
+    logic [7:0]  next_beats_rem;
+
+    always_ff @(posedge clk) begin
         if (!reset_n) begin
-            state          <= STARTUP;
-            startup_count  <= 4'd0;
-            avm_address    <= 29'b0;
-            avm_burstcount <= 8'd1;
-            result         <= 8'h00;
-            done           <= 1'b0;
-            start_prev     <= 1'b0;
-            avm_read       <= 1'b0;
-        end else begin
-            start_prev <= start;
-            avm_read <= 1'b0;
-            
-            case (state)
-                STARTUP: begin
-                    // Hold off for 16 cycles after reset before
-                    // allowing any F2SDRAM transactions
-                    if (startup_count == 4'd15)
-                        state <= IDLE;
-                    else
-                        startup_count <= startup_count + 1'b1;
-                end
+            avm_address     <= '0;
+            avm_read        <= 1'b0;
+            avm_burstcount  <= '0;
 
-                IDLE: begin
-                    done <= 1'b0;
-                    if (start && !start_prev) begin
-                        avm_address    <= read_addr[28:0];
-                        avm_burstcount <= 8'd1;
-                        state          <= READ_REQ;
-                    end
-                end
+            done            <= 1'b0;
+            result          <= '0;
 
-                READ_REQ: begin
-                    avm_read <= 1'b1;  // ALWAYS assert while in this state
+            beats_remaining <= '0;
 
-                    if (!avm_waitrequest) begin
-                        state <= READ_WAIT;
-                    end
-                end
-
-                READ_WAIT: begin
-                    avm_read <= 1'b0;
-
-                    if (avm_readdatavalid) begin
-                        result <= avm_readdata[7:0];
-                        done   <= 1'b1;
-                        state  <= COMPLETE;
-                    end
-                end
-
-                COMPLETE: begin
-                    if (!start)
-                        state <= IDLE;
-                end
-
-                default: begin
-                    state <= IDLE;
-                    avm_read <= 1'b0;
-                end
-            endcase
+            state           <= IDLE;
         end
+        else begin
+            avm_address     <= next_address;
+            avm_read        <= next_read;
+            avm_burstcount  <= next_burst;
+
+            done            <= next_done;
+            result          <= next_result;
+
+            beats_remaining <= next_beats_rem;
+
+            state           <= next_state;
+        end
+    end
+
+    always_comb begin
+        
+        next_address   = avm_address;
+        next_read      = avm_read;
+        next_burst     = avm_burstcount;
+
+        next_done      = done;
+        next_result    = result;
+
+        next_beats_rem = beats_remaining;
+
+        next_state     = state;
+
+        case (state)
+            IDLE: begin
+                if (start) begin
+                    next_address    = read_addr;
+                    next_read       = 1'b1;
+                    next_burst      = (read_size + 8'h7) >> 3;
+
+                    next_done       = 1'b0;     // Could reset result here as well
+
+                    next_beats_rem  = (read_size + 8'h7) >> 3;
+
+                    next_state      = WAIT_REQ;
+                end
+            end
+
+            WAIT_REQ: begin
+                if (!avm_waitrequest) begin
+                    next_read  = 1'b0;
+                    next_state = READ_DATA;
+                end
+            end
+
+            READ_DATA: begin
+                if (avm_readdatavalid) begin
+                    next_result    = avm_readdata[7:0];
+
+                    next_beats_rem = beats_remaining - 1'b1;
+                    next_state     = EXTRA_BEATS;
+                end
+            end
+
+            EXTRA_BEATS: begin
+                if (beats_remaining == 8'd0) begin
+                    next_state = IDLE;
+                    next_done  = 1'b1;
+                end
+                else if (avm_readdatavalid) begin
+                    next_beats_rem = beats_remaining - 8'd1;
+                end
+            end
+
+            default: ;
+
+        endcase
     end
 
 endmodule

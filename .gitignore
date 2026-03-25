@@ -7,3 +7,6 @@ incremental_db/
 output_files/
 simulation/
 software/
+obj_dir/
+waveform.vcd
+wavestate.*
