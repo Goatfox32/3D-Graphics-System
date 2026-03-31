@@ -14,7 +14,9 @@ module f2h_sdram_test_master (
     input  logic        avm_waitrequest,
 
     output logic [7:0]  result,
-    output logic        done
+    output logic        done,
+
+    output logic [7:0]  debug
 );
     
     enum logic [1:0] { IDLE, WAIT_REQ, READ_DATA, EXTRA_BEATS} 
@@ -34,7 +36,7 @@ module f2h_sdram_test_master (
         if (!reset_n) begin
             avm_address     <= '0;
             avm_read        <= 1'b0;
-            avm_burstcount  <= '0;
+            avm_burstcount  <= 8'h01;
 
             done            <= 1'b0;
             result          <= '0;
@@ -75,11 +77,11 @@ module f2h_sdram_test_master (
                 if (start) begin
                     next_address    = read_addr;
                     next_read       = 1'b1;
-                    next_burst      = (read_size + 8'h7) >> 3;
+                    next_burst      = (read_size < 8'd1) ? 8'd1 : (read_size + 8'h7) >> 3;
 
                     next_done       = 1'b0;     // Could reset result here as well
 
-                    next_beats_rem  = (read_size + 8'h7) >> 3;
+                    next_beats_rem  = (read_size < 8'd1) ? 8'd1 : (read_size + 8'h7) >> 3;
 
                     next_state      = WAIT_REQ;
                 end
@@ -115,5 +117,10 @@ module f2h_sdram_test_master (
 
         endcase
     end
+
+    assign debug[0] = (state == WAIT_REQ);
+    assign debug[1] = avm_waitrequest;
+    assign debug[2] = (state == READ_DATA);
+    assign debug[3] = avm_readdatavalid;
 
 endmodule

@@ -10,3 +10,4 @@ software/
 obj_dir/
 waveform.vcd
 wavestate.*
+temp/

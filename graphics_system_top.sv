@@ -48,8 +48,6 @@ module graphics_system_top (
     logic [31:0] cmd_addr_internal;
     logic [31:0] cmd_size_internal;
 
-    assign LED = gpu_status_internal;
-
     // ==========================================
     // F2H SDRAM0 wires
     // ==========================================
@@ -65,13 +63,21 @@ module graphics_system_top (
     // ==========================================
     logic test_done;
     logic [7:0] test_result;
+    logic [7:0] test_debug;
 
     assign gpu_status_internal = {test_done, test_result[6:0]};
+
+    logic start_r;
+    always_ff @(posedge clk50 or negedge s1)
+        if (!s1) start_r <= 1'b0;
+        else     start_r <= gpu_control_internal[0];
+
+    wire start_pulse = gpu_control_internal[0] & ~start_r;
 
     f2h_sdram_test_master test_master (
         .clk               (clk50),
         .reset_n           (s1),
-        .start             (gpu_control_internal[0]),
+        .start             (start_pulse),
         .read_addr         (cmd_addr_internal[28:0]),
         .read_size         (cmd_size_internal[7:0]),
         .avm_address       (f2h_sdram0_address),
@@ -81,8 +87,18 @@ module graphics_system_top (
         .avm_readdatavalid (f2h_sdram0_readdatavalid),
         .avm_waitrequest   (f2h_sdram0_waitrequest),
         .result            (test_result),
-        .done              (test_done)
+        .done              (test_done),
+        .debug             (test_debug)
     );
+
+    assign LED[0] = gpu_control_internal[0];
+    assign LED[1] = start_pulse;
+    assign LED[2] = test_debug[0];   // WAIT_REQ
+    assign LED[3] = test_debug[1];   // waitrequest
+    assign LED[4] = test_debug[2];   // READ_DATA
+    assign LED[5] = test_debug[3];   // readdatavalid
+    assign LED[6] = test_done;
+    assign LED[7] = test_result[0];
 
     // ==========================================
     // Qsys system
