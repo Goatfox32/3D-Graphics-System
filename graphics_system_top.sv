@@ -59,13 +59,12 @@ module graphics_system_top (
     logic [7:0]  f2h_sdram0_burstcount;
 
     // ==========================================
-    // Test master
+    // Command processor
     // ==========================================
-    logic test_done;
-    logic [7:0] test_result;
-    logic [7:0] test_debug;
-
-    assign gpu_status_internal = {test_done, test_result[6:0]};
+    logic rast_enable;
+    logic rast_clear;
+    logic vertex_valid;
+    logic [191:0] vertex_data;
 
     logic start_r;
     always_ff @(posedge clk50 or negedge s1)
@@ -74,31 +73,29 @@ module graphics_system_top (
 
     wire start_pulse = gpu_control_internal[0] & ~start_r;
 
-    f2h_sdram_test_master test_master (
-        .clk               (clk50),
-        .reset_n           (s1),
-        .start             (start_pulse),
-        .read_addr         (cmd_addr_internal[28:0]),
-        .read_size         (cmd_size_internal[7:0]),
-        .avm_address       (f2h_sdram0_address),
-        .avm_read          (f2h_sdram0_read),
-        .avm_burstcount    (f2h_sdram0_burstcount),
-        .avm_readdata      (f2h_sdram0_readdata),
-        .avm_readdatavalid (f2h_sdram0_readdatavalid),
-        .avm_waitrequest   (f2h_sdram0_waitrequest),
-        .result            (test_result),
-        .done              (test_done),
-        .debug             (test_debug)
-    );
+    assign LED = gpu_status_internal;
 
-    assign LED[0] = gpu_control_internal[0];
-    assign LED[1] = start_pulse;
-    assign LED[2] = test_debug[0];   // WAIT_REQ
-    assign LED[3] = test_debug[1];   // waitrequest
-    assign LED[4] = test_debug[2];   // READ_DATA
-    assign LED[5] = test_debug[3];   // readdatavalid
-    assign LED[6] = test_done;
-    assign LED[7] = test_result[0];
+    command_processor cmd_proc (
+        .clk            (clk50),
+        .reset_n        (s1),
+
+        .read_addr      (cmd_addr_internal),
+        .read_size      (cmd_size_internal),
+        .status         (gpu_status_internal),
+        .control        (gpu_control_internal),
+
+        .avm_address    (f2h_sdram0_address),
+        .avm_read       (f2h_sdram0_read),
+        .avm_burstcount (f2h_sdram0_burstcount),
+        .avm_readdata   (f2h_sdram0_readdata),
+        .avm_readdatavalid(f2h_sdram0_readdatavalid),
+        .avm_waitrequest(f2h_sdram0_waitrequest),
+
+        .rast_enable    (rast_enable),
+        .rast_clear     (rast_clear),
+        .vertex_valid   (vertex_valid),
+        .vertex_data    (vertex_data)
+    );
 
     // ==========================================
     // Qsys system
