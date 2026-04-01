@@ -1,251 +1,482 @@
-#include "Vf2h_sdram_test_master.h"
-#include "verilated.h"
-#include "verilated_vcd_c.h"
-#include <stdio.h>
 #include <stdlib.h>
+#include <iostream>
+#include <iomanip>
+#include <verilated.h>
+#include <verilated_vcd_c.h>
+#include "Vcommand_processor.h"
 
 static vluint64_t sim_time = 0;
-static Vf2h_sdram_test_master* dut;
-static VerilatedVcdC* tfp;
-static int test_num = 0;
-static int pass_count = 0;
-static int fail_count = 0;
+static Vcommand_processor *dut;
+static VerilatedVcdC *trace;
 
 void tick() {
-    dut->clk = 0; dut->eval(); tfp->dump(sim_time++);
-    dut->clk = 1; dut->eval(); tfp->dump(sim_time++);
+    dut->clk = 0;
+    dut->eval();
+    trace->dump(sim_time++);
+    dut->clk = 1;
+    dut->eval();
+    trace->dump(sim_time++);
 }
 
 void reset() {
     dut->reset_n = 0;
-    dut->start = 0;
+    dut->control = 0;
     dut->read_addr = 0;
     dut->read_size = 0;
-    dut->avm_waitrequest = 0;
-    dut->avm_readdatavalid = 0;
     dut->avm_readdata = 0;
-    for (int i = 0; i < 4; i++) tick();
+    dut->avm_readdatavalid = 0;
+    dut->avm_waitrequest = 1;
+    dut->rast_enable = 0;
+    for (int i = 0; i < 5; i++) tick();
     dut->reset_n = 1;
     tick();
 }
 
-void check(const char* name, int condition) {
-    test_num++;
-    if (condition) {
-        printf("  [PASS] %s\n", name);
-        pass_count++;
-    } else {
-        printf("  [FAIL] %s\n", name);
-        fail_count++;
-    }
+void pulse_start(uint32_t addr, uint32_t size) {
+    dut->read_addr = addr;
+    dut->read_size = size;
+    dut->control = 0x01;
+    tick();
+    dut->control = 0x00;
 }
 
-// Drive a burst read from the slave side.
-//   wait_cycles:  how many cycles to hold waitrequest after read is seen
-//   beat_count:   number of readdatavalid beats to send
-//   gap_pattern:  array of ints, one per beat. Value = number of idle cycles
-//                 BEFORE that beat. NULL means no gaps (back-to-back).
-//   first_byte:   value placed in readdata[7:0] on the first beat
-void drive_slave(int wait_cycles, int beat_count, int* gap_pattern, uint8_t first_byte) {
-
-    // Wait for avm_read to assert
-    int timeout = 50;
-    while (!dut->avm_read && timeout-- > 0) tick();
-    if (timeout <= 0) { printf("  [TIMEOUT] waiting for avm_read\n"); return; }
-
-    // Hold waitrequest
-    dut->avm_waitrequest = 1;
-    for (int i = 0; i < wait_cycles; i++) tick();
+void release_waitrequest() {
     dut->avm_waitrequest = 0;
-    tick(); // This is the cycle where read is accepted (!waitrequest && avm_read)
+    tick();
+    dut->avm_waitrequest = 1;
+    tick();
+}
 
-    // Now deliver beats
-    for (int beat = 0; beat < beat_count; beat++) {
-        // Insert gap before this beat if requested
-        int gap = (gap_pattern != NULL) ? gap_pattern[beat] : 0;
-        dut->avm_readdatavalid = 0;
-        for (int g = 0; g < gap; g++) tick();
-
-        // Drive one valid beat
-        dut->avm_readdatavalid = 1;
-        if (beat == 0)
-            dut->avm_readdata = (uint64_t)first_byte;
-        else
-            dut->avm_readdata = 0xDEAD000000000000ULL | beat;
-        tick();
-    }
-
+void send_beat(uint64_t data) {
+    dut->avm_readdatavalid = 1;
+    dut->avm_readdata = data;
+    tick();
     dut->avm_readdatavalid = 0;
 }
 
-// ---------------------------------------------------------------
-// Test 1: Single-beat read (read_size=8, burstcount=1)
-// ---------------------------------------------------------------
-void test_single_beat() {
-    printf("\nTest: Single-beat read (read_size=8)\n");
-    reset();
-
-    dut->read_addr = 0x00001000;
-    dut->read_size = 8;
-    dut->start = 1;
-    tick();
-    dut->start = 0;
-
-    drive_slave(/*wait_cycles=*/0, /*beat_count=*/1, NULL, 0xAB);
-
-    // Let done propagate
-    for (int i = 0; i < 4; i++) tick();
-
-    check("done is asserted",    dut->done == 1);
-    check("result is 0xAB",      dut->result == 0xAB);
-    check("avm_read deasserted", dut->avm_read == 0);
+void wait_cycles(int n) {
+    for (int i = 0; i < n; i++) tick();
 }
 
-// ---------------------------------------------------------------
-// Test 2: Multi-beat burst (read_size=32, burstcount=4)
-// ---------------------------------------------------------------
-void test_multi_beat() {
-    printf("\nTest: Multi-beat burst (read_size=32, burstcount=4)\n");
-    reset();
-
-    dut->read_addr = 0x00002000;
-    dut->read_size = 32;
-    dut->start = 1;
-    tick();
-    dut->start = 0;
-
-    drive_slave(0, 4, NULL, 0x42);
-
-    for (int i = 0; i < 4; i++) tick();
-
-    check("done is asserted",       dut->done == 1);
-    check("result is 0x42",         dut->result == 0x42);
+bool check(const char *name, bool condition) {
+    std::cout << (condition ? "  PASS: " : "  FAIL: ") << name << std::endl;
+    return condition;
 }
 
-// ---------------------------------------------------------------
-// Test 3: Gaps in readdatavalid mid-burst
-// ---------------------------------------------------------------
-void test_gaps_in_valid() {
-    printf("\nTest: Gaps in readdatavalid (4 beats with pauses)\n");
+// ============================================================
+// Test 1: Triangle command — happy path
+// ============================================================
+bool test_triangle_happy() {
+    std::cout << "\n=== Test 1: Triangle command — happy path ===" << std::endl;
+    bool ok = true;
+
     reset();
 
-    dut->read_addr = 0x00003000;
-    dut->read_size = 32;
-    dut->start = 1;
+    ok &= check("Initially not busy", (dut->status & 0x01) == 0);
+
+    // 32 bytes = 4 beats (1 cmd + 3 vertices)
+    pulse_start(0x03000000, 32);
     tick();
-    dut->start = 0;
 
-    // gap_pattern: 0 idle before beat 0, 3 before beat 1, 0 before beat 2, 5 before beat 3
-    int gaps[] = {0, 3, 0, 5};
-    drive_slave(0, 4, gaps, 0x77);
+    ok &= check("Busy after start", (dut->status & 0x01) == 1);
+    ok &= check("avm_read asserted", dut->avm_read == 1);
+    ok &= check("avm_burstcount == 4", dut->avm_burstcount == 4);
+    ok &= check("avm_address correct", dut->avm_address == 0x03000000);
 
-    for (int i = 0; i < 4; i++) tick();
+    release_waitrequest();
 
-    check("done is asserted",  dut->done == 1);
-    check("result is 0x77",    dut->result == 0x77);
+    ok &= check("avm_read deasserted", dut->avm_read == 0);
+
+    // Beat 1: triangle command
+    send_beat(0x0000000000000003ULL);
+    tick();
+
+    // Beat 2: vertex 0 — LSB is 0xCC
+    send_beat(0x11111111111111CCULL);
+
+    // Beat 3: vertex 1 — LSB is 0xBB
+    send_beat(0x22222222222222BBULL);
+
+    // Beat 4: vertex 2 — LSB is 0xAA
+    send_beat(0x33333333333333AAULL);
+
+    // Let it settle
+    bool saw_valid = false;
+    for (int i = 0; i < 5; i++) {
+        if (dut->vertex_valid) { saw_valid = true; tick(); break; }
+        tick();
+    }
+    ok &= check("vertex_valid pulsed", saw_valid);
+
+    // Check vertex data
+    uint64_t v0 = ((uint64_t)dut->vertex_data[5] << 32) | dut->vertex_data[4];
+    uint64_t v1 = ((uint64_t)dut->vertex_data[3] << 32) | dut->vertex_data[2];
+    uint64_t v2 = ((uint64_t)dut->vertex_data[1] << 32) | dut->vertex_data[0];
+
+    std::cout << "  vertex[191:128] = 0x" << std::hex << v0 << std::endl;
+    std::cout << "  vertex[127:64]  = 0x" << std::hex << v1 << std::endl;
+    std::cout << "  vertex[63:0]    = 0x" << std::hex << v2 << std::endl;
+
+    ok &= check("vertex[191:128] correct", v0 == 0x11111111111111CCULL);
+    ok &= check("vertex[127:64] correct",  v1 == 0x22222222222222BBULL);
+    ok &= check("vertex[63:0] correct",    v2 == 0x33333333333333AAULL);
+
+    // Check LED status bits
+    ok &= check("status[4] v2 LSB == 0xAA", (dut->status >> 4) & 1);
+    ok &= check("status[5] v1 LSB == 0xBB", (dut->status >> 5) & 1);
+    ok &= check("status[6] v0 LSB == 0xCC", (dut->status >> 6) & 1);
+    ok &= check("status[7] all correct",    (dut->status >> 7) & 1);
+
+    ok &= check("Back to not busy", (dut->status & 0x01) == 0);
+    ok &= check("No size error", ((dut->status >> 1) & 1) == 0);
+
+    return ok;
 }
 
-// ---------------------------------------------------------------
-// Test 4: Extended waitrequest
-// ---------------------------------------------------------------
-void test_long_waitrequest() {
-    printf("\nTest: Waitrequest held for 10 cycles\n");
+// ============================================================
+// Test 2: Clear command — happy path
+// ============================================================
+bool test_clear_happy() {
+    std::cout << "\n=== Test 2: Clear command — happy path ===" << std::endl;
+    bool ok = true;
+
     reset();
 
-    dut->read_addr = 0x00004000;
-    dut->read_size = 8;
-    dut->start = 1;
+    // 8 bytes = 1 beat (just the command)
+    pulse_start(0x03000000, 8);
     tick();
-    dut->start = 0;
 
-    drive_slave(/*wait_cycles=*/10, 1, NULL, 0x55);
+    ok &= check("Busy", (dut->status & 0x01) == 1);
+    ok &= check("avm_burstcount == 1", dut->avm_burstcount == 1);
 
-    for (int i = 0; i < 4; i++) tick();
+    release_waitrequest();
 
-    check("done is asserted",  dut->done == 1);
-    check("result is 0x55",    dut->result == 0x55);
+    // Command beat: CLEAR (0x01)
+    send_beat(0x0000000000000001ULL);
+
+    // Check rast_clear pulses
+    bool saw_clear = false;
+    for (int i = 0; i < 5; i++) {
+        if (dut->rast_clear) { saw_clear = true; tick(); break; }
+        tick();
+    }
+    ok &= check("rast_clear pulsed", saw_clear);
+    ok &= check("Back to not busy", (dut->status & 0x01) == 0);
+    ok &= check("No size error", ((dut->status >> 1) & 1) == 0);
+
+    return ok;
 }
 
-// ---------------------------------------------------------------
-// Test 5: Back-to-back transactions
-// ---------------------------------------------------------------
-void test_back_to_back() {
-    printf("\nTest: Back-to-back transactions\n");
+// ============================================================
+// Test 3: Triangle with wrong burst size — size error
+// ============================================================
+bool test_triangle_size_error() {
+    std::cout << "\n=== Test 3: Triangle with wrong burst size ===" << std::endl;
+    bool ok = true;
+
     reset();
 
-    // First transaction
-    dut->read_addr = 0x00005000;
-    dut->read_size = 8;
-    dut->start = 1;
+    // 8 bytes = 1 beat, but triangle expects 4
+    pulse_start(0x03000000, 8);
     tick();
-    dut->start = 0;
 
-    drive_slave(0, 1, NULL, 0x11);
-    for (int i = 0; i < 4; i++) tick();
+    ok &= check("avm_burstcount == 1", dut->avm_burstcount == 1);
 
-    check("txn1: done asserted",  dut->done == 1);
-    check("txn1: result is 0x11", dut->result == 0x11);
+    release_waitrequest();
 
-    // Second transaction without reset
-    dut->read_addr = 0x00006000;
-    dut->read_size = 16;
-    dut->start = 1;
-    tick();
-    dut->start = 0;
+    // Command beat: TRIANGLE (0x03)
+    send_beat(0x0000000000000003ULL);
 
-    drive_slave(2, 2, NULL, 0x22);
-    for (int i = 0; i < 4; i++) tick();
+    wait_cycles(3);
 
-    check("txn2: done asserted",  dut->done == 1);
-    check("txn2: result is 0x22", dut->result == 0x22);
+    ok &= check("Size error set", (dut->status >> 1) & 1);
+    ok &= check("vertex_valid stays low", dut->vertex_valid == 0);
+    ok &= check("Back to not busy", (dut->status & 0x01) == 0);
+
+    return ok;
 }
 
-// ---------------------------------------------------------------
-// Test 6: Small read_size (1 byte — burstcount should be 1)
-// ---------------------------------------------------------------
-void test_small_read_size() {
-    printf("\nTest: Minimum read_size=1 (burstcount should be 1)\n");
+// ============================================================
+// Test 4: Clear with wrong burst size — size error
+// ============================================================
+bool test_clear_size_error() {
+    std::cout << "\n=== Test 4: Clear with wrong burst size ===" << std::endl;
+    bool ok = true;
+
     reset();
 
-    dut->read_addr = 0x00007000;
-    dut->read_size = 1;
-    dut->start = 1;
+    // 32 bytes = 4 beats, but clear expects 1
+    pulse_start(0x03000000, 32);
     tick();
-    dut->start = 0;
 
-    drive_slave(0, 1, NULL, 0xEE);
+    ok &= check("avm_burstcount == 4", dut->avm_burstcount == 4);
 
-    for (int i = 0; i < 4; i++) tick();
+    release_waitrequest();
 
-    check("done is asserted",  dut->done == 1);
-    check("result is 0xEE",    dut->result == 0xEE);
+    // Command beat: CLEAR (0x01)
+    send_beat(0x0000000000000001ULL);
+
+    wait_cycles(3);
+
+    ok &= check("Size error set", (dut->status >> 1) & 1);
+    ok &= check("rast_clear stays low", dut->rast_clear == 0);
+    ok &= check("Back to not busy", (dut->status & 0x01) == 0);
+
+    return ok;
 }
 
-// ---------------------------------------------------------------
+// ============================================================
+// Test 5: NOP/unknown command — returns to idle
+// ============================================================
+bool test_nop_command() {
+    std::cout << "\n=== Test 5: NOP/unknown command ===" << std::endl;
+    bool ok = true;
 
-int main(int argc, char** argv) {
+    reset();
+
+    pulse_start(0x03000000, 8);
+    tick();
+
+    release_waitrequest();
+
+    // Command beat: unknown (0xFF)
+    send_beat(0x00000000000000FFULL);
+
+    wait_cycles(3);
+
+    ok &= check("vertex_valid stays low", dut->vertex_valid == 0);
+    ok &= check("rast_clear stays low", dut->rast_clear == 0);
+    ok &= check("Back to not busy", (dut->status & 0x01) == 0);
+    ok &= check("No size error", ((dut->status >> 1) & 1) == 0);
+
+    return ok;
+}
+
+// ============================================================
+// Test 6: Size error clears on next transaction
+// ============================================================
+bool test_size_error_clears() {
+    std::cout << "\n=== Test 6: Size error clears on next transaction ===" << std::endl;
+    bool ok = true;
+
+    reset();
+
+    // First: trigger a size error (triangle with burst=1)
+    pulse_start(0x03000000, 8);
+    tick();
+    release_waitrequest();
+    send_beat(0x0000000000000003ULL);
+    wait_cycles(3);
+
+    ok &= check("Size error set", (dut->status >> 1) & 1);
+
+    // Second: start a new valid transaction
+    pulse_start(0x03000000, 32);
+    tick();
+
+    ok &= check("Size error cleared on new start", ((dut->status >> 1) & 1) == 0);
+
+    // Complete the transaction normally
+    release_waitrequest();
+    send_beat(0x0000000000000003ULL);
+    tick();
+    send_beat(0x11111111111111CCULL);
+    send_beat(0x22222222222222BBULL);
+    send_beat(0x33333333333333AAULL);
+
+    bool saw_valid = false;
+    for (int i = 0; i < 5; i++) {
+        if (dut->vertex_valid) { saw_valid = true; tick(); break; }
+        tick();
+    }
+
+    ok &= check("vertex_valid pulsed", saw_valid);
+    ok &= check("No size error after valid transaction", ((dut->status >> 1) & 1) == 0);
+    ok &= check("All correct LED", (dut->status >> 7) & 1);
+
+    return ok;
+}
+
+// ============================================================
+// Test 7: Gaps in readdatavalid during triangle
+// ============================================================
+bool test_triangle_with_gaps() {
+    std::cout << "\n=== Test 7: Triangle with gaps in readdatavalid ===" << std::endl;
+    bool ok = true;
+
+    reset();
+
+    pulse_start(0x03000000, 32);
+    tick();
+    release_waitrequest();
+
+    send_beat(0x0000000000000003ULL);
+    wait_cycles(8);
+
+    send_beat(0xAAAAAAAAAAAAAAAAULL);
+    wait_cycles(3);
+
+    send_beat(0xBBBBBBBBBBBBBBBBULL);
+    wait_cycles(15);
+
+    send_beat(0xCCCCCCCCCCCCCCCCULL);
+
+    bool saw_valid = false;
+    for (int i = 0; i < 5; i++) {
+        if (dut->vertex_valid) { saw_valid = true; tick(); break; }
+        tick();
+    }
+    ok &= check("vertex_valid pulsed despite gaps", saw_valid);
+
+    uint64_t v0 = ((uint64_t)dut->vertex_data[5] << 32) | dut->vertex_data[4];
+    uint64_t v1 = ((uint64_t)dut->vertex_data[3] << 32) | dut->vertex_data[2];
+    uint64_t v2 = ((uint64_t)dut->vertex_data[1] << 32) | dut->vertex_data[0];
+
+    ok &= check("v0 correct", v0 == 0xAAAAAAAAAAAAAAAAULL);
+    ok &= check("v1 correct", v1 == 0xBBBBBBBBBBBBBBBBULL);
+    ok &= check("v2 correct", v2 == 0xCCCCCCCCCCCCCCCCULL);
+
+    return ok;
+}
+
+// ============================================================
+// Test 8: Long waitrequest
+// ============================================================
+bool test_long_waitrequest() {
+    std::cout << "\n=== Test 8: Waitrequest held 30 cycles ===" << std::endl;
+    bool ok = true;
+
+    reset();
+
+    pulse_start(0x03000000, 32);
+    tick();
+
+    // Verify avm_read and stuck indicator hold for 30 cycles
+    bool held = true;
+    for (int i = 0; i < 30; i++) {
+        if (!dut->avm_read) held = false;
+        if (!((dut->status >> 3) & 1)) held = false;
+        tick();
+    }
+    ok &= check("avm_read held for 30 cycles", held);
+    ok &= check("Stuck indicator held for 30 cycles", held);
+
+    release_waitrequest();
+    ok &= check("avm_read deasserted", dut->avm_read == 0);
+
+    // Complete normally
+    send_beat(0x0000000000000003ULL);
+    tick();
+    send_beat(0x1111111111111111ULL);
+    send_beat(0x2222222222222222ULL);
+    send_beat(0x3333333333333333ULL);
+    wait_cycles(5);
+
+    ok &= check("Back to not busy", (dut->status & 0x01) == 0);
+
+    return ok;
+}
+
+// ============================================================
+// Test 9: Clear followed by triangle
+// ============================================================
+bool test_clear_then_triangle() {
+    std::cout << "\n=== Test 9: Clear followed by triangle ===" << std::endl;
+    bool ok = true;
+
+    reset();
+
+    // Transaction 1: clear
+    pulse_start(0x03000000, 8);
+    tick();
+    release_waitrequest();
+    send_beat(0x0000000000000001ULL);
+
+    bool saw_clear = false;
+    for (int i = 0; i < 5; i++) {
+        if (dut->rast_clear) { saw_clear = true; tick(); break; }
+        tick();
+    }
+    ok &= check("Clear: rast_clear pulsed", saw_clear);
+    ok &= check("Clear: not busy", (dut->status & 0x01) == 0);
+
+    // Transaction 2: triangle
+    pulse_start(0x03000000, 32);
+    tick();
+    release_waitrequest();
+    send_beat(0x0000000000000003ULL);
+    tick();
+    send_beat(0xDEADDEADDEAD00CCULL);
+    send_beat(0xBEEFBEEFBEEF00BBULL);
+    send_beat(0xCAFECAFECAFE00AAULL);
+
+    bool saw_valid = false;
+    for (int i = 0; i < 5; i++) {
+        if (dut->vertex_valid) { saw_valid = true; tick(); break; }
+        tick();
+    }
+    ok &= check("Triangle: vertex_valid pulsed", saw_valid);
+    ok &= check("Triangle: all correct LED", (dut->status >> 7) & 1);
+    ok &= check("Triangle: not busy", (dut->status & 0x01) == 0);
+
+    return ok;
+}
+
+// ============================================================
+// Test 10: DRAW_PIXEL — not implemented, returns to idle
+// ============================================================
+bool test_draw_pixel_nop() {
+    std::cout << "\n=== Test 10: DRAW_PIXEL returns to idle ===" << std::endl;
+    bool ok = true;
+
+    reset();
+
+    pulse_start(0x03000000, 8);
+    tick();
+    release_waitrequest();
+
+    // Command: DRAW_PIXEL (0x02)
+    send_beat(0x0000000000000002ULL);
+
+    wait_cycles(3);
+
+    ok &= check("vertex_valid stays low", dut->vertex_valid == 0);
+    ok &= check("rast_clear stays low", dut->rast_clear == 0);
+    ok &= check("Back to not busy", (dut->status & 0x01) == 0);
+
+    return ok;
+}
+
+// ============================================================
+int main(int argc, char **argv) {
     Verilated::commandArgs(argc, argv);
     Verilated::traceEverOn(true);
 
-    dut = new Vf2h_sdram_test_master;
-    tfp = new VerilatedVcdC;
-    dut->trace(tfp, 99);
-    tfp->open("waveform.vcd");
+    dut = new Vcommand_processor;
+    trace = new VerilatedVcdC;
+    dut->trace(trace, 99);
+    trace->open("command_processor.vcd");
 
-    test_single_beat();
-    test_multi_beat();
-    test_gaps_in_valid();
-    test_long_waitrequest();
-    test_back_to_back();
-    test_small_read_size();
+    int pass = 0, fail = 0;
 
-    printf("\n=============================\n");
-    printf("Results: %d passed, %d failed out of %d\n", pass_count, fail_count, test_num);
-    printf("=============================\n");
+    test_triangle_happy()       ? pass++ : fail++;
+    test_clear_happy()          ? pass++ : fail++;
+    test_triangle_size_error()  ? pass++ : fail++;
+    test_clear_size_error()     ? pass++ : fail++;
+    test_nop_command()          ? pass++ : fail++;
+    test_size_error_clears()    ? pass++ : fail++;
+    test_triangle_with_gaps()   ? pass++ : fail++;
+    test_long_waitrequest()     ? pass++ : fail++;
+    test_clear_then_triangle()  ? pass++ : fail++;
+    test_draw_pixel_nop()       ? pass++ : fail++;
 
-    tfp->close();
-    dut->final();
+    std::cout << "\n========================================" << std::endl;
+    std::cout << std::dec << "  " << pass << " tests passed, " << fail << " tests failed" << std::endl;
+    std::cout << "========================================" << std::endl;
+
+    trace->close();
+    delete trace;
     delete dut;
 
-    return fail_count > 0 ? 1 : 0;
+    return fail > 0 ? 1 : 0;
 }
