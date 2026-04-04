@@ -38,6 +38,9 @@ void init_comm() {
 }
 
 void send_command(uint8_t cmd, uint8_t *arg, int command_len) {
+    
+    // ADD CHECK FOR command_reader BUSY
+
     data[0] = (uint32_t)cmd;
     for (int i = 0; i < command_len-1; i++) {
         data[i+1] = (uint32_t)arg[i];
