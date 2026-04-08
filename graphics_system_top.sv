@@ -10,6 +10,7 @@ module graphics_system_top (
     input  logic        clk50,
     input  logic        s1,
     output logic [7:0]  LED,
+    output logic [35:0] GPIO_0,
 
     output wire [14:0]  HPS_DDR3_ADDR,
     output wire [2:0]   HPS_DDR3_BA,
@@ -101,7 +102,7 @@ module graphics_system_top (
     // 100ms stretch helper — instantiate one per signal you want to see
     logic [22:0] stretch_start, stretch_busy, stretch_cmd_wr, stretch_data_wr, stretch_vvalid;
 
-    logic start_pulse;
+    logic start_pulse = 1'b0;
     always_ff @(posedge clk50) begin
         if (!system_reset_n) begin
             stretch_start   <= 0;
@@ -196,9 +197,7 @@ module graphics_system_top (
         .data_buffer_full   (data_buffer_full),
         .data_buffer_count  (data_buffer_count),
         .data_buffer_en     (data_buffer_write_en),
-        .data_buffer_data   (data_buffer_data_in),
-
-        .start_pulse        (start_pulse)
+        .data_buffer_data   (data_buffer_data_in)
     );
 
     fifo cmd_fifo (
