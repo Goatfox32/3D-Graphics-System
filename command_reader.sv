@@ -31,10 +31,11 @@ module command_reader (
     output logic [63:0]  data_buffer_data
 );
 
-    localparam NOP = 8'h00,
-               CLEAR = 8'h01,
-               DRAW_PIXEL = 8'h02,
-               DRAW_TRIANGLE = 8'h03;
+    localparam NOP           = 8'h00,
+               CLEAR         = 8'h01,
+               DRAW_PIXEL    = 8'h02,
+               DRAW_TRIANGLE = 8'h03,
+               DRAW_SPRITE   = 8'h04;
 
     // --- SDRAM signals
     logic [28:0] next_address;
@@ -171,6 +172,21 @@ module command_reader (
                             else begin
                                 next_command_buffer_en   = 1'b1;
                                 next_command_buffer_data = 64'h03;
+                                next_state = READ_DATA;
+                            end
+                        end
+
+                        DRAW_SPRITE: begin // DRAW_SPRITE command
+                            if (avm_burstcount != 8'h02) begin
+                                next_size_error = 1'b1;
+                            end
+                            else begin
+                                next_command_buffer_en   = 1'b1;
+                                next_command_buffer_data = 64'h04;
+
+                                next_data_buffer_en   = 1'b1;
+                                next_data_buffer_data = {8'h0, avm_readdata[63:8]};
+                                
                                 next_state = READ_DATA;
                             end
                         end

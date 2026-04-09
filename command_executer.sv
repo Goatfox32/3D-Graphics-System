@@ -19,45 +19,59 @@ module command_executer (
     output logic         data_buffer_en,
 
     input  logic         rast_ready,
+    output logic         rast_clear,
+    output logic [63:0]  rast_set_pixel,
     output logic         vertex_valid,
     output logic [191:0] vertex_data,
-    output logic         rast_clear,
-    output logic [63:0]  rast_set_pixel
+    output logic         sprite_valid,
+    output logic [127:0] sprite_data
 );
 
     localparam NOP           = 8'h00,
                CLEAR         = 8'h01,
                DRAW_PIXEL    = 8'h02,
-               DRAW_TRIANGLE = 8'h03;
-
-    logic next_vertex_valid;
-    logic [191:0] next_vertex_data;
+               DRAW_TRIANGLE = 8'h03,
+               DRAW_SPRITE   = 8'h04;
 
     logic next_rast_clear;
     logic [63:0] next_rast_set_pixel;
 
-    logic [2:0] vertices_remaining, next_vertices_remaining;
+    logic next_vertex_valid;
+    logic [191:0] next_vertex_data;
 
-    enum logic [2:0] { IDLE, READ_COMMAND, CLEAR_COMMAND, DRAW_TRIANGLE_COMMAND } state, next_state;
+    logic next_sprite_valid;
+    logic [127:0] next_sprite_data;
+
+    logic [2:0] beats_remaining, next_beats_remaining;
+
+    enum logic [2:0] { IDLE, READ_COMMAND, CLEAR_COMMAND, DRAW_TRIANGLE_COMMAND, DRAW_SPRITE_COMMAND } state, next_state;
 
     always_ff @(posedge clk) begin
         if (!reset_n) begin
-            vertex_valid      <= 1'b0;
-            vertex_data       <= '0;
             rast_clear        <= 1'b0;
             rast_set_pixel    <= '0;
 
-            vertices_remaining <= 3'b0;
+            vertex_valid      <= 1'b0;
+            vertex_data       <= '0;
+
+            sprite_valid      <= 1'b0;
+            sprite_data       <= '0;
+
+            beats_remaining <= 3'b0;
 
             state <= IDLE;
         end
         else begin
-            vertex_valid      <= next_vertex_valid;
-            vertex_data       <= next_vertex_data;
             rast_clear        <= next_rast_clear;
             rast_set_pixel    <= next_rast_set_pixel;
 
-            vertices_remaining <= next_vertices_remaining;
+            vertex_valid      <= next_vertex_valid;
+            vertex_data       <= next_vertex_data;
+
+            sprite_valid      <= next_sprite_valid;
+            sprite_data       <= next_sprite_data;
+
+            beats_remaining <= next_beats_remaining;
 
             state <= next_state;
         end
@@ -66,12 +80,17 @@ module command_executer (
     always_comb begin
         command_buffer_en = 1'b0;
         data_buffer_en    = 1'b0;
-        next_vertex_valid       = 1'b0;
-        next_vertex_data        = vertex_data;
+
         next_rast_clear         = 1'b0;
         next_rast_set_pixel     = rast_set_pixel;
 
-        next_vertices_remaining = vertices_remaining;
+        next_vertex_valid       = 1'b0;
+        next_vertex_data        = vertex_data;
+
+        next_sprite_valid       = 1'b0;
+        next_sprite_data        = sprite_data;
+
+        next_beats_remaining = beats_remaining;
 
         next_state              = state;
 
@@ -98,8 +117,13 @@ module command_executer (
                     end
 
                     DRAW_TRIANGLE: begin
-                        next_vertices_remaining = 3'd3;
+                        next_beats_remaining = 3'd3;
                         next_state = DRAW_TRIANGLE_COMMAND;
+                    end
+
+                    DRAW_SPRITE: begin
+                        next_beats_remaining = 3'd2;
+                        next_state = DRAW_SPRITE_COMMAND;
                     end
 
                     default: begin
@@ -116,7 +140,7 @@ module command_executer (
             end
 
             DRAW_TRIANGLE_COMMAND: begin
-                if (vertices_remaining == 0) begin
+                if (beats_remaining == 0) begin
                     if (rast_ready) begin
                         next_vertex_valid = 1'b1;
                         next_state = IDLE;
@@ -124,8 +148,22 @@ module command_executer (
                 end
                 else if (!data_buffer_empty) begin
                     data_buffer_en = 1'b1;
-                    next_vertex_data[(3-vertices_remaining)*64 +: 64] = data_buffer_data;
-                    next_vertices_remaining = vertices_remaining - 1;
+                    next_vertex_data[(3-beats_remaining)*64 +: 64] = data_buffer_data;
+                    next_beats_remaining = beats_remaining - 1;
+                end
+            end
+
+            DRAW_SPRITE_COMMAND: begin
+                if (beats_remaining == 0) begin
+                    if (rast_ready) begin
+                        next_sprite_valid = 1'b1;
+                        next_state = IDLE;
+                    end
+                end
+                else if (!data_buffer_empty) begin
+                    data_buffer_en = 1'b1;
+                    next_sprite_data[(2-beats_remaining)*64 +: 64] = data_buffer_data;
+                    next_beats_remaining = beats_remaining - 1;
                 end
             end
 
