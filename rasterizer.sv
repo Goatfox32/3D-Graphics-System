@@ -26,7 +26,9 @@ module rasterizer #(
 	output logic write_en,
 	output logic [X_WIDTH-1:0] write_x,
 	output logic [Y_WIDTH-1:0] write_y,
-	output logic [PIXEL_SIZE-1:0] write_color
+	output logic [PIXEL_SIZE-1:0] write_color,
+
+	input logic fb_busy
 );
 	////////// max & min function /////////
 	function automatic [X_WIDTH-1:0] max3x
@@ -190,17 +192,19 @@ module rasterizer #(
             SCAN: begin
                 rast_ready = 1'b0;
 
-                if (y_curr > y_max) begin
-                    next_state = IDLE;
-                end
-                else if(x_curr >= x_max) begin
-                    next_x_curr = x_min;
-                    next_y_curr = y_curr + 1;
-                end
-                else begin
-                    next_x_curr = x_curr + 1;
-                    next_y_curr = y_curr;
-                end
+				if (!fb_busy) begin
+					if (y_curr > y_max) begin
+						next_state = IDLE;
+					end
+					else if(x_curr >= x_max) begin
+						next_x_curr = x_min;
+						next_y_curr = y_curr + 1;
+					end
+					else begin
+						next_x_curr = x_curr + 1;
+						next_y_curr = y_curr;
+					end
+				end
             end
 
             default: next_state = IDLE;
