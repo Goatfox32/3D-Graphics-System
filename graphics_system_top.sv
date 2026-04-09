@@ -212,7 +212,7 @@ module graphics_system_top (
         .X_WIDTH(X_WIDTH),
         .Y_WIDTH(Y_WIDTH)
 	) rast_u (
-        .clk(vga_clk),
+        .clk(clk50),
         .s1(s1),
         .vertex_data(vertex_data),
         .vertex_valid(vertex_valid),
@@ -230,11 +230,12 @@ module graphics_system_top (
         .X_WIDTH(X_WIDTH),
         .Y_WIDTH(Y_WIDTH)
 	) fb_u (
-        .clk(vga_clk),
+        .wr_clk(clk50),
         .write_en(rast_write_en),
         .write_x(rast_write_x),
         .write_y(rast_write_y),
         .write_data(rast_write_color),
+        .rd_clk(vga_clk),
         .read_x(fb_read_x),
         .read_y(fb_read_y),
         .read_data(fb_read_data)
