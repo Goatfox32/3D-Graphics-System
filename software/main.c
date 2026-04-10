@@ -5,7 +5,6 @@
 #include "sprites.h"
 #include "demos.h"
 
-
 int main() {
 
     init_comm();
@@ -22,8 +21,12 @@ int main() {
 
     //int exit = 0;
     //spinning_cube_demo(&exit);
-
-    draw_sprite(10, 10, 31, 63, 31, &SMILEY_FACE);
+    draw_triangle(160,  10, 31,  0,  0,
+                  20,  200,  0, 63,  0,
+                  300, 200,  0,  0, 31);
+    
+    uint64_t sp1 = make_sprite(smiley);
+    draw_sprite(10, 10, 31, 63, 0, &sp1);
 
     return 0;
 }

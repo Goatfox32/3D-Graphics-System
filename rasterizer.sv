@@ -205,34 +205,34 @@ module rasterizer #(
 	assign y_min = min3y(y1,y2,y3);
 	
 	always_comb begin
-			next_v1 = v1;
-			next_v2 = v2;
-			next_v3 = v3;
-			next_x_curr = x_curr;
-			next_y_curr = y_curr;
-			next_state = state;
-			next_sprite_reg = sprite_reg;
-			rast_ready = 1'b0;
-			  
-			e1 = '0;
-			e2 = '0;
-			e3 = '0;
-			area = '0;
+		next_v1 = v1;
+		next_v2 = v2;
+		next_v3 = v3;
+		next_x_curr = x_curr;
+		next_y_curr = y_curr;
+		next_state = state;
+		next_sprite_reg = sprite_reg;
+		rast_ready = 1'b0;
 			
-			area_n = '0;
-			e1_n = '0;
-			e2_n = '0;
-			e3_n = '0;
+		e1 = '0;
+		e2 = '0;
+		e3 = '0;
+		area = '0;
+		
+		area_n = '0;
+		e1_n = '0;
+		e2_n = '0;
+		e3_n = '0;
 
-			r_num = '0;
-			g_num = '0;
-			b_num = '0;
+		r_num = '0;
+		g_num = '0;
+		b_num = '0;
 
-			r_mix = '0;
-			g_mix = '0;
-			b_mix = '0;
-			mixed_color = '0;
-			pixel_valid = 1'b0;
+		r_mix = '0;
+		g_mix = '0;
+		b_mix = '0;
+		mixed_color = '0;
+		pixel_valid = 1'b0;
 
         case (state)
             IDLE: begin
@@ -245,60 +245,59 @@ module rasterizer #(
 
                     next_state = LOAD_TRIANGLE;
                 end
-					 else if (sprite_valid) begin
-						next_sprite_reg = sprite_data;
-						next_state = LOAD_SPRITE;
-					 end
+				else if (sprite_valid) begin
+					next_sprite_reg = sprite_data;
+					next_state = LOAD_SPRITE;
+				end
             end
-				
-				// ---- LOAD ----
-				LOAD_TRIANGLE: begin
-					 next_x_curr = x_min;
-					 next_y_curr = y_min;
-					 next_state = SCAN_TRIANGLE;
-				end
 
-				LOAD_SPRITE: begin
-					 next_x_curr = sprite_x;
-					 next_y_curr = sprite_y;
-					 next_state = SCAN_SPRITE;
-				end
+			LOAD_TRIANGLE: begin
+				next_x_curr = x_min;
+				next_y_curr = y_min;
+				next_state = SCAN_TRIANGLE;
+			end
+
+			LOAD_SPRITE: begin
+				next_x_curr = sprite_x;
+				next_y_curr = sprite_y;
+				next_state = SCAN_SPRITE;
+			end
 				
             SCAN_TRIANGLE: begin
-               rast_ready = 1'b0;
+                rast_ready = 1'b0;
 
-					if (!fb_busy) begin
-						if (y_curr > y_max) begin
-							next_state = IDLE;
-						end
-						else if(x_curr >= x_max) begin
-							next_x_curr = x_min;
-							next_y_curr = y_curr + 1;
-						end
-						else begin
-							next_x_curr = x_curr + 1;
-							next_y_curr = y_curr;
-						end
+				if (!fb_busy) begin
+					if (y_curr > y_max) begin
+						next_state = IDLE;
 					end
+					else if(x_curr >= x_max) begin
+						next_x_curr = x_min;
+						next_y_curr = y_curr + 1;
+					end
+					else begin
+						next_x_curr = x_curr + 1;
+						next_y_curr = y_curr;
+					end
+				end
             end
 				
 			SCAN_SPRITE: begin
+				rast_ready = 1'b0;
+				
 				if (!fb_busy) begin
-						if (y_curr > sprite_y_max) begin
-							next_state = IDLE;
-				end
-				else if (x_curr >= sprite_x_max) begin
-					next_x_curr = sprite_x;
-					next_y_curr = y_curr + 1'b1;
-				end
-				else begin
-					next_x_curr = x_curr + 1'b1;
-					next_y_curr = y_curr;
-				end
+					if (y_curr > sprite_y_max) begin
+						next_state = IDLE;
+					end
+					else if (x_curr >= sprite_x_max) begin
+						next_x_curr = sprite_x;
+						next_y_curr = y_curr + 1'b1;
+					end
+					else begin
+						next_x_curr = x_curr + 1'b1;
+						next_y_curr = y_curr;
+					end
 				end
 			end
-
-					
 
             default: next_state = IDLE;
         endcase
@@ -352,12 +351,11 @@ module rasterizer #(
 				end
 			end
 		end
-		
 		else if (state == SCAN_SPRITE) begin
-			 if (sprite_bits[sprite_idx] && y_curr <= sprite_y_max) begin
-				  pixel_valid = 1'b1;
-				  mixed_color = {sprite_r[4:3], sprite_g[5:4], sprite_b[4:3]};
-			 end
+			if (sprite_bits[sprite_idx] && y_curr <= sprite_y_max) begin
+				pixel_valid = 1'b1;
+				mixed_color = {sprite_r[4:3], sprite_g[5:4], sprite_b[4:3]};
+			end
 		end
 		
 		next_write_en = !fb_busy && ((state == SCAN_TRIANGLE) || (state == SCAN_SPRITE)) && pixel_valid;
