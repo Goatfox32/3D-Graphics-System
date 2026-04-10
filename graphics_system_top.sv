@@ -1,4 +1,4 @@
-//  Jacob Edwards & Braden Vanderwoerd
+// Braden Vanderwoerd & Jacob Edwards
 // 2026-04-06
 // Graphics System Top Module
 // This is the top-level module that integrates the command reader, command executer, FIFOs, and the Qsys system.
