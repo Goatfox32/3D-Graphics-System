@@ -19,4 +19,4 @@ void draw_pixel(int x, int y, int r, int g, int b);
 void draw_triangle(int x1, int y1, int r1, int b1, int g1,
                    int x2, int y2, int r2, int b2, int g2,
                    int x3, int y3, int r3, int b3, int g3);
-void draw_sprite(int x, int y, int r, int g, int b, uint8_t *texture);
+void draw_sprite(int x, int y, int r, int g, int b, uint64_t *texture);

@@ -2,10 +2,12 @@
 #include <stdint.h>
 #include <stdio.h>
 #include "comm.h"
-
+#include "sprites.h"
+#include "demos.h"
 
 
 int main() {
+
     init_comm();
 
     clear();
@@ -17,6 +19,9 @@ int main() {
     // Read status back from the GPU
     uint8_t status = read_status();
     printf("GPU Status: 0x%02X\n", status);
+
+    int exit = 0;
+    spinning_triangles_demo(&exit);
 
     return 0;
 }
