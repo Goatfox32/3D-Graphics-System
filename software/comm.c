@@ -56,7 +56,7 @@ void init_comm() {
 
 void send_command(uint8_t cmd, uint8_t *arg, int command_len) {
     
-    // ADD CHECK FOR command_reader BUSY
+    while (lw[GPU_STATUS] & 0x01) { }
 
     data[0] = (uint32_t)cmd;
     for (int i = 0; i < command_len-1; i++) {
@@ -105,4 +105,20 @@ void draw_triangle(int x1, int y1, int r1, int g1, int b1,
     memcpy(&args[23], &vertex2, 8);
 
     send_command(0x03, args, 32);
+}
+
+void draw_sprite(int x, int y, int r, int g, int b, uint8_t *texture) {
+    /*
+    uint64_t vertex = ((uint64_t)(x & 0x1FF))
+                    | ((uint64_t)(y & 0xFF) << 9)
+                    | ((uint64_t)(r & 0x1F) << 17)
+                    | ((uint64_t)(g & 0x3F) << 22)
+                    | ((uint64_t)(b & 0x1F) << 28);
+
+
+    uint8_t args[15];
+    memset(args, 0, 15);
+    memcpy(&args[0], &vertex, 8);
+    memcpy(&args[8], texture, 7);
+    send_command(0x04, args, 16);*/
 }
