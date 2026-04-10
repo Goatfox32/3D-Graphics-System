@@ -96,6 +96,10 @@ module graphics_system_top (
     logic         vertex_valid;
     logic [191:0] vertex_data;
     logic [63:0]  rast_set_pixel;
+    logic         vertex_valid;
+    logic [191:0] vertex_data;
+    logic         sprite_valid;
+    logic [127:0] sprite_data;
 
     // ==========================================
     // Rasterizer-Frame Buffer interface
@@ -105,6 +109,7 @@ module graphics_system_top (
     logic [Y_WIDTH-1:0]    rast_write_y;
     logic [PIXEL_SIZE-1:0] rast_write_color;
     logic                  fb_busy;
+    logic                  frame_ready;
 
     // ==========================================
     // Frame Buffer - VGA interface
@@ -217,12 +222,15 @@ module graphics_system_top (
         .s1(s1),
         .vertex_data(vertex_data),
         .vertex_valid(vertex_valid),
+        .sprite_data(sprite_data),
+        .sprite_valid(sprite_valid),
         .rast_ready(rast_enable),
         .write_en(rast_write_en),
         .write_x(rast_write_x),
         .write_y(rast_write_y),
         .write_color(rast_write_color),
-        .fb_busy(fb_busy)
+        .fb_busy(fb_busy),
+        .frame_ready_out_r(frame_ready)
 	);
 
     frame_buffer #(
@@ -232,17 +240,18 @@ module graphics_system_top (
         .X_WIDTH(X_WIDTH),
         .Y_WIDTH(Y_WIDTH)
 	) fb_u (
-        .s1(s1),
-        .hps_clear(rast_clear),
+        .read_clk(vga_clk),
         .write_clk(clk50),
+        .hps_clear(rast_clear),
+        .s1(s1),
         .v_counter(v_counter),
         .write_en(rast_write_en),
         .write_x(rast_write_x),
         .write_y(rast_write_y),
         .write_data(rast_write_color),
-        .read_clk(vga_clk),
         .read_x(fb_read_x),
         .read_y(fb_read_y),
+        .frame_ready_in(frame_ready),
         .read_data(fb_read_data),
         .busy(fb_busy)
 	);
