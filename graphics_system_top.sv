@@ -96,6 +96,8 @@ module graphics_system_top (
     logic         vertex_valid;
     logic [191:0] vertex_data;
     logic [63:0]  rast_set_pixel;
+    logic         sprite_valid;
+    logic [127:0] sprite_data;
 
     // ==========================================
     // Rasterizer-Frame Buffer interface
@@ -202,9 +204,28 @@ module graphics_system_top (
         .vertex_valid        (vertex_valid),
         .vertex_data         (vertex_data),
         .rast_clear          (rast_clear),
-        .rast_set_pixel      (rast_set_pixel)
+        .rast_set_pixel      (rast_set_pixel),
+        .sprite_valid        (sprite_valid),
+        .sprite_data         (sprite_data)
     );
 
+    
+    logic [7:0] debug_sticky;
+
+    always_ff @(posedge clk) begin
+        if (~s1) begin
+            debug_sticky <= '0;
+        end else begin
+            if (sprite_valid)                debug_sticky[0] <= 1'b1; // executer pulsed sprite_valid
+            if (rast_u.write_en)             debug_sticky[1] <= 1'b1; // rasterizer wrote a pixel
+            if (fb_u.busy)                   debug_sticky[2] <= 1'b1; // FB entered clear at some point
+            debug_sticky[3] <= rast_ready;   // live — is rasterizer stuck?
+            debug_sticky[4] <= fb_u.busy;    // live — is FB stuck in clear?
+            debug_sticky[5] <= sprite_valid; // live — momentary flash
+        end
+    end
+
+    assign LED = debug_sticky;
 
     rasterizer #(
         .FB_WIDTH(FB_WIDTH),
@@ -217,6 +238,8 @@ module graphics_system_top (
         .s1(s1),
         .vertex_data(vertex_data),
         .vertex_valid(vertex_valid),
+        .sprite_data(sprite_data),
+        .sprite_valid(sprite_valid),
         .rast_ready(rast_enable),
         .write_en(rast_write_en),
         .write_x(rast_write_x),

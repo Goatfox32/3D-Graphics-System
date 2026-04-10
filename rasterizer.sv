@@ -282,20 +282,20 @@ module rasterizer #(
 					end
             end
 				
-				SCAN_SPRITE: begin
-            if (!fb_busy) begin
-					if (y_curr > sprite_y_max) begin
-						next_state = IDLE;
-               end
-               else if (x_curr >= sprite_x_max) begin
-                  next_x_curr = sprite_x;
-                  next_y_curr = y_curr + 1'b1;
-               end
-               else begin
-                  next_x_curr = x_curr + 1'b1;
-                  next_y_curr = y_curr;
-               end
-            end
+			SCAN_SPRITE: begin
+				if (!fb_busy) begin
+						if (y_curr > sprite_y_max) begin
+							next_state = IDLE;
+				end
+				else if (x_curr >= sprite_x_max) begin
+					next_x_curr = sprite_x;
+					next_y_curr = y_curr + 1'b1;
+				end
+				else begin
+					next_x_curr = x_curr + 1'b1;
+					next_y_curr = y_curr;
+				end
+				end
 			end
 
 					
@@ -354,7 +354,7 @@ module rasterizer #(
 		end
 		
 		else if (state == SCAN_SPRITE) begin
-			 if (sprite_bits[sprite_idx]) begin
+			 if (sprite_bits[sprite_idx] && y_curr <= sprite_y_max) begin
 				  pixel_valid = 1'b1;
 				  mixed_color = {sprite_r[4:3], sprite_g[5:4], sprite_b[4:3]};
 			 end
