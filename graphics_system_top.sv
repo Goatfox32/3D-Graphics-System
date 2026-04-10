@@ -96,8 +96,6 @@ module graphics_system_top (
     logic         vertex_valid;
     logic [191:0] vertex_data;
     logic [63:0]  rast_set_pixel;
-    logic         vertex_valid;
-    logic [191:0] vertex_data;
     logic         sprite_valid;
     logic [127:0] sprite_data;
 
