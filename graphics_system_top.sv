@@ -203,7 +203,7 @@ module graphics_system_top (
         .data_buffer_data    (data_buffer_data_out),
         .data_buffer_en      (data_buffer_read_en),
 
-        .rast_ready          (rast_enable),
+        .rast_ready          (rast_ready),
         .vertex_valid        (vertex_valid),
         .vertex_data         (vertex_data),
         .rast_clear          (rast_clear),
@@ -248,7 +248,7 @@ module graphics_system_top (
         .write_clk  (clk50),
         .hps_clear  (rast_clear),
         .s1         (s1),
-        .v_counter  (vcounter),
+        .v_counter  (v_counter),
         .write_en   (rast_write_en),
         .write_x    (rast_write_x),
         .write_y    (rast_write_y),
