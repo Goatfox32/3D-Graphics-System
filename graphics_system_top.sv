@@ -91,11 +91,11 @@ module graphics_system_top (
     // ==========================================
     // Rasterizer-Command interface
     // ==========================================
-    logic         rast_enable;
-    logic         rast_clear;
+    logic         rast_ready;
+    logic         rast_clear;     // Actually wired to fb
     logic         vertex_valid;
     logic [191:0] vertex_data;
-    logic [63:0]  rast_set_pixel;
+    logic [63:0]  rast_set_pixel; // Not implemented in rasterizer
     logic         sprite_valid;
     logic [127:0] sprite_data;
 
@@ -107,18 +107,21 @@ module graphics_system_top (
     logic [Y_WIDTH-1:0]    rast_write_y;
     logic [PIXEL_SIZE-1:0] rast_write_color;
     logic                  fb_busy;
+    logic                  fb_hold_n;
 
     // ==========================================
     // Frame Buffer - VGA interface
     // ==========================================
-    logic [X_WIDTH-1:0]    fb_read_x;
-    logic [Y_WIDTH-1:0]    fb_read_y;
-    logic [PIXEL_SIZE-1:0] fb_read_data;
-    logic                  vga_clk;
-
+    logic [X_WIDTH-1:0]     fb_read_x;
+    logic [Y_WIDTH-1:0]     fb_read_y;
+    logic [PIXEL_SIZE-1:0]  fb_read_data;
+    logic                   vga_clk;
     logic [$clog2(800)-1:0] h_counter;
 	logic [$clog2(525)-1:0] v_counter;
 
+    // ==========================================
+    // Parameters
+    // ==========================================
     localparam int FB_WIDTH   = 320;
 	localparam int FB_HEIGHT  = 240;
 	localparam int PIXEL_SIZE = 6;
@@ -209,64 +212,52 @@ module graphics_system_top (
         .sprite_data         (sprite_data)
     );
 
-    
-    logic [7:0] debug_sticky;
-
-    always_ff @(posedge clk) begin
-        if (~s1) begin
-            debug_sticky <= '0;
-        end else begin
-            if (sprite_valid)                debug_sticky[0] <= 1'b1; // executer pulsed sprite_valid
-            if (rast_u.write_en)             debug_sticky[1] <= 1'b1; // rasterizer wrote a pixel
-            if (fb_u.busy)                   debug_sticky[2] <= 1'b1; // FB entered clear at some point
-            debug_sticky[3] <= rast_ready;   // live — is rasterizer stuck?
-            debug_sticky[4] <= fb_u.busy;    // live — is FB stuck in clear?
-            debug_sticky[5] <= sprite_valid; // live — momentary flash
-        end
-    end
-
-    assign LED = debug_sticky;
-
     rasterizer #(
-        .FB_WIDTH(FB_WIDTH),
-        .FB_HEIGHT(FB_HEIGHT),
-        .PIXEL_SIZE(PIXEL_SIZE),
-        .X_WIDTH(X_WIDTH),
-        .Y_WIDTH(Y_WIDTH)
+        .FB_WIDTH   (FB_WIDTH),
+        .FB_HEIGHT  (FB_HEIGHT),
+        .PIXEL_SIZE (PIXEL_SIZE),
+        .X_WIDTH    (X_WIDTH),
+        .Y_WIDTH    (Y_WIDTH)
 	) rast_u (
-        .clk(clk50),
-        .s1(s1),
-        .vertex_data(vertex_data),
-        .vertex_valid(vertex_valid),
-        .sprite_data(sprite_data),
-        .sprite_valid(sprite_valid),
-        .rast_ready(rast_enable),
-        .write_en(rast_write_en),
-        .write_x(rast_write_x),
-        .write_y(rast_write_y),
-        .write_color(rast_write_color),
-        .fb_busy(fb_busy)
+        .clk          (clk50),
+        .s1           (s1),
+
+        .rast_ready   (rast_ready),
+        .vertex_data  (vertex_data),
+        .vertex_valid (vertex_valid),
+        .sprite_data  (sprite_data),
+        .sprite_valid (sprite_valid),
+
+        .write_en     (rast_write_en),
+        .write_x      (rast_write_x),
+        .write_y      (rast_write_y),
+        .write_color  (rast_write_color),
+
+        .fb_busy      (fb_busy),
+        .fb_hold_n    (fb_hold_n)
 	);
 
     frame_buffer #(
-        .FB_WIDTH(FB_WIDTH),
-        .FB_HEIGHT(FB_HEIGHT),
-        .PIXEL_SIZE(PIXEL_SIZE),
-        .X_WIDTH(X_WIDTH),
-        .Y_WIDTH(Y_WIDTH)
+        .FB_WIDTH   (FB_WIDTH),
+        .FB_HEIGHT  (FB_HEIGHT),
+        .PIXEL_SIZE (PIXEL_SIZE),
+        .X_WIDTH    (X_WIDTH),
+        .Y_WIDTH    (Y_WIDTH)
 	) fb_u (
-        .s1(s1),
-        .hps_clear(rast_clear),
-        .write_clk(clk50),
-        .write_en(rast_write_en),
-        .write_x(rast_write_x),
-        .write_y(rast_write_y),
-        .write_data(rast_write_color),
-        .read_clk(vga_clk),
-        .read_x(fb_read_x),
-        .read_y(fb_read_y),
-        .read_data(fb_read_data),
-        .busy(fb_busy)
+        .read_clk   (vga_clk),
+        .write_clk  (clk50),
+        .hps_clear  (rast_clear),
+        .s1         (s1),
+        .v_counter  (vcounter),
+        .write_en   (rast_write_en),
+        .write_x    (rast_write_x),
+        .write_y    (rast_write_y),
+        .write_data (rast_write_color),
+        .read_x     (fb_read_x),
+        .read_y     (fb_read_y),
+        .frame_ready_in(fb_hold_n),
+        .read_data  (fb_read_data),
+        .busy       (fb_busy)
 	);
 
     vga_timing vga_u (
