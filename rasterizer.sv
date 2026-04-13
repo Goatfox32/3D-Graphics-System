@@ -27,8 +27,7 @@ module rasterizer #(
 	output logic [Y_WIDTH-1:0]    write_y,
 	output logic [PIXEL_SIZE-1:0] write_color,
 
-	input  logic fb_busy,
-	output logic fb_hold_n
+	input  logic fb_busy
 );
 	// --- Utility functions
 	function automatic [X_WIDTH-1:0] max3x
@@ -86,7 +85,6 @@ module rasterizer #(
 	localparam FRAC = 24;
 
 	logic next_rast_ready;
-	logic next_fb_hold_n;
 	
 	// --- Vertex and position registers
 	logic [63:0] v1, v2, v3, next_v1, next_v2, next_v3;
@@ -206,7 +204,6 @@ module rasterizer #(
 			write_color <= '0;
 
 			rast_ready <= 1'b0;
-			fb_hold_n <= 1'b0;
 			
 		end else begin
 			v1 <= next_v1;
@@ -248,7 +245,6 @@ module rasterizer #(
 			write_color <= next_write_color;
 
 			rast_ready <= next_rast_ready;
-			fb_hold_n <= next_fb_hold_n;
 		end
 	end
 
@@ -290,8 +286,6 @@ module rasterizer #(
 		g_wide = '0;
 		b_wide = '0;
 		mixed_color = '0;
-
-		next_fb_hold_n = 1'b0;
 
         case (state)
             IDLE: begin
@@ -391,10 +385,8 @@ module rasterizer #(
 				pixel_valid = (e1_n >= 0) && (e2_n >= 0) && (e3_n >= 0);
 				
 				if (!fb_busy) begin
-					next_fb_hold_n = 1'b0;
 					if (y_curr > y_max) begin
 						next_state = IDLE;
-						next_fb_hold_n = 1'b1;
 					end
 					else if(x_curr >= x_max) begin
 						next_x_curr = x_min;
@@ -426,7 +418,7 @@ module rasterizer #(
 				g_mix = g_wide >>> FRAC;
 				b_mix = b_wide >>> FRAC;
 				*/
-				mixed_color = {r_mix[4:3], g_mix[5:4], b_mix[4:3]};
+				mixed_color = {r1[4:3], g1[5:4], b1[4:3]};
             end
 
 			LOAD_SPRITE: begin
@@ -440,10 +432,8 @@ module rasterizer #(
 				
 			SCAN_SPRITE: begin
 				if (!fb_busy) begin
-					next_fb_hold_n = 1'b0;
 					if (y_curr > sprite_y_max) begin
 						next_state = IDLE;
-						next_fb_hold_n = 1'b1;
 					end
 					else if (x_curr >= sprite_x_max) begin
 						next_x_curr = sprite_x;

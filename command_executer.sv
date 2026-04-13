@@ -18,9 +18,12 @@ module command_executer (
     input  logic [63:0]  data_buffer_data,
     output logic         data_buffer_en,
 
+    input  logic         fb_busy,
+    output logic         fb_clear,
+    output logic         fb_swap,
+
     input  logic         rast_ready,
-    output logic         rast_clear,
-    output logic [63:0]  rast_set_pixel,
+    output logic [63:0]  rast_set_pixel, // Not implemented
     output logic         vertex_valid,
     output logic [191:0] vertex_data,
     output logic         sprite_valid,
@@ -29,11 +32,12 @@ module command_executer (
 
     localparam NOP           = 8'h00,
                CLEAR         = 8'h01,
-               DRAW_PIXEL    = 8'h02,
+               PRESENT_FRAME = 8'h02,
                DRAW_TRIANGLE = 8'h03,
                DRAW_SPRITE   = 8'h04;
 
-    logic next_rast_clear;
+    logic next_fb_clear;
+    logic next_fb_swap;
     logic [63:0] next_rast_set_pixel;
 
     logic next_vertex_valid;
@@ -44,12 +48,15 @@ module command_executer (
 
     logic [2:0] beats_remaining, next_beats_remaining;
 
-    enum logic [2:0] { IDLE, READ_COMMAND, CLEAR_COMMAND, DRAW_TRIANGLE_COMMAND, DRAW_SPRITE_COMMAND } state, next_state;
+    enum logic [2:0] { IDLE, READ_COMMAND, CLEAR_COMMAND, PRESENT_FRAME_COMMAND,
+                       DRAW_TRIANGLE_COMMAND, DRAW_SPRITE_COMMAND } 
+                       state, next_state;
 
     always_ff @(posedge clk) begin
         if (!reset_n) begin
-            rast_clear        <= 1'b0;
-            rast_set_pixel    <= '0;
+            fb_clear        <= 1'b0;
+            fb_swap         <= 1'b0;
+            rast_set_pixel  <= '0;
 
             vertex_valid      <= 1'b0;
             vertex_data       <= '0;
@@ -62,7 +69,8 @@ module command_executer (
             state <= IDLE;
         end
         else begin
-            rast_clear        <= next_rast_clear;
+            fb_clear        <= next_fb_clear;
+            fb_swap         <= next_fb_swap;
             rast_set_pixel    <= next_rast_set_pixel;
 
             vertex_valid      <= next_vertex_valid;
@@ -81,7 +89,8 @@ module command_executer (
         command_buffer_en = 1'b0;
         data_buffer_en    = 1'b0;
 
-        next_rast_clear         = 1'b0;
+        next_fb_clear         = 1'b0;
+        next_fb_swap          = 1'b0;
         next_rast_set_pixel     = rast_set_pixel;
 
         next_vertex_valid       = 1'b0;
@@ -112,8 +121,8 @@ module command_executer (
                         next_state = CLEAR_COMMAND;
                     end
 
-                    DRAW_PIXEL: begin
-                        next_state = IDLE;
+                    PRESENT_FRAME: begin
+                        next_state = PRESENT_FRAME_COMMAND;
                     end
 
                     DRAW_TRIANGLE: begin
@@ -133,8 +142,15 @@ module command_executer (
             end
 
             CLEAR_COMMAND: begin
-                if (rast_ready) begin
-                    next_rast_clear = 1'b1;
+                if (!fb_busy) begin
+                    next_fb_clear = 1'b1;
+                    next_state = IDLE;
+                end
+            end
+
+            PRESENT_FRAME_COMMAND: begin
+                if (!fb_busy) begin
+                    next_fb_swap = 1'b1;
                     next_state = IDLE;
                 end
             end

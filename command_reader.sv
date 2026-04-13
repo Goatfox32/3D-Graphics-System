@@ -33,7 +33,7 @@ module command_reader (
 
     localparam NOP           = 8'h00,
                CLEAR         = 8'h01,
-               DRAW_PIXEL    = 8'h02,
+               PRESENT_FRAME = 8'h02,
                DRAW_TRIANGLE = 8'h03,
                DRAW_SPRITE   = 8'h04;
 
@@ -161,8 +161,15 @@ module command_reader (
                             end
                         end
 
-                        DRAW_PIXEL: begin // DRAW_PIXEL command (not implemented)
-                            
+                        PRESENT_FRAME: begin // DRAW_PIXEL command (not implemented)
+                            if (avm_burstcount != 8'h01) begin
+                                next_size_error = 1'b1;
+                            end
+                            else begin
+                                next_command_buffer_en   = 1'b1;
+                                next_command_buffer_data = 64'h02;
+                                next_state = READ_DATA;
+                            end
                         end
 
                         DRAW_TRIANGLE: begin // DRAW_TRIANGLE command

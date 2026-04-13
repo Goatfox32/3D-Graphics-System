@@ -89,10 +89,15 @@ module graphics_system_top (
     logic        data_buffer_read_en;
 
     // ==========================================
-    // Rasterizer-Command interface
+    // Command-Frame Buffer interface
+    // ==========================================
+    logic fb_clear;
+    logic fb_swap;
+
+    // ==========================================
+    // Command-Rasterizer interface
     // ==========================================
     logic         rast_ready;
-    logic         rast_clear;     // Actually wired to fb
     logic         vertex_valid;
     logic [191:0] vertex_data;
     logic [63:0]  rast_set_pixel; // Not implemented in rasterizer
@@ -107,7 +112,6 @@ module graphics_system_top (
     logic [Y_WIDTH-1:0]    rast_write_y;
     logic [PIXEL_SIZE-1:0] rast_write_color;
     logic                  fb_busy;
-    logic                  fb_hold_n;
 
     // ==========================================
     // Frame Buffer - VGA interface
@@ -202,11 +206,14 @@ module graphics_system_top (
         .data_buffer_empty   (data_buffer_empty),
         .data_buffer_data    (data_buffer_data_out),
         .data_buffer_en      (data_buffer_read_en),
+        
+        .fb_busy             (fb_busy),
+        .fb_clear            (fb_clear),
+        .fb_swap             (fb_swap),
 
         .rast_ready          (rast_ready),
         .vertex_valid        (vertex_valid),
         .vertex_data         (vertex_data),
-        .rast_clear          (rast_clear),
         .rast_set_pixel      (rast_set_pixel),
         .sprite_valid        (sprite_valid),
         .sprite_data         (sprite_data)
@@ -233,8 +240,7 @@ module graphics_system_top (
         .write_y      (rast_write_y),
         .write_color  (rast_write_color),
 
-        .fb_busy      (fb_busy),
-        .fb_hold_n    (fb_hold_n)
+        .fb_busy      (fb_busy)
 	);
 
     frame_buffer #(
@@ -246,7 +252,7 @@ module graphics_system_top (
 	) fb_u (
         .read_clk   (vga_clk),
         .write_clk  (clk50),
-        .hps_clear  (rast_clear),
+        .hps_clear  (fb_clear),
         .s1         (s1),
         .v_counter  (v_counter),
         .write_en   (rast_write_en),
@@ -255,7 +261,7 @@ module graphics_system_top (
         .write_data (rast_write_color),
         .read_x     (fb_read_x),
         .read_y     (fb_read_y),
-        .frame_ready_in(fb_hold_n),
+        .frame_ready_in(fb_swap),
         .read_data  (fb_read_data),
         .busy       (fb_busy)
 	);
