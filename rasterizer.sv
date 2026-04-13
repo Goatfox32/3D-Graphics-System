@@ -83,7 +83,7 @@ module rasterizer #(
 		end
 	endfunction
 
-	localparam FRAC = 16;
+	localparam FRAC = 24;
 
 	logic next_rast_ready;
 	logic next_fb_hold_n;
@@ -110,15 +110,16 @@ module rasterizer #(
 	logic signed [31:0] e1_n, e2_n, e3_n, next_e1_n, next_e2_n, next_e3_n,
 						e1_row, e2_row, e3_row, next_e1_row, next_e2_row, next_e3_row;
 
-	logic signed [18:0] inv_area, next_inv_area;
-	logic        [33:0] rcp_num, next_rcp_num;
-	logic        [33:0] rcp_quot, next_rcp_quot;
+	logic signed [24:0] inv_area, next_inv_area;
+	logic        [41:0] rcp_num, next_rcp_num;
+	logic        [41:0] rcp_quot, next_rcp_quot;
 	logic        [5:0]  rcp_bit, next_rcp_bit;
 
 	// --- Color registers
 	logic [4:0] r1, r2, r3, r_mix;
 	logic [5:0] g1, g2, g3, g_mix;
 	logic [4:0] b1, b2, b3, b_mix;
+	logic [49:0] r_wide, g_wide, b_wide;
 
 	logic [PIXEL_SIZE-1:0] mixed_color;
 
@@ -285,6 +286,9 @@ module rasterizer #(
 		r_mix = '0;
 		g_mix = '0;
 		b_mix = '0;
+		r_wide = '0;
+		g_wide = '0;
+		b_wide = '0;
 		mixed_color = '0;
 
 		next_fb_hold_n = 1'b0;
@@ -335,7 +339,7 @@ module rasterizer #(
 
 						next_area_n = -area;
 
-						next_state = CALC_RECIP;
+						next_state = SCAN_TRIANGLE;
 					end
 					else if (area > 0) begin
 						next_p1 = sy1 - sy2;
@@ -354,7 +358,7 @@ module rasterizer #(
 						
 						next_area_n = area;
 
-						next_state = CALC_RECIP;
+						next_state = SCAN_TRIANGLE;
 					end
 
 					next_e1_row = next_e1_n;
@@ -368,6 +372,7 @@ module rasterizer #(
 
 			end
 
+			// Code for color mixing calculation -- NOT IN USE
 			CALC_RECIP: begin // Iterative divider code from Claude Opus
 				if (rcp_bit == 0) begin
 					next_inv_area = rcp_quot;
@@ -412,9 +417,15 @@ module rasterizer #(
 					end
 				end
 
-				r_mix = ((e2_n*r1 + e3_n*r2 + e1_n*r3) * inv_area) >>> FRAC;
-				g_mix = ((e2_n*g1 + e3_n*g2 + e1_n*g3) * inv_area) >>> FRAC;
-				b_mix = ((e2_n*b1 + e3_n*b2 + e1_n*b3) * inv_area) >>> FRAC;
+				/*
+				r_wide = (e2_n*r1 + e3_n*r2 + e1_n*r3) * inv_area;
+				g_wide = (e2_n*g1 + e3_n*g2 + e1_n*g3) * inv_area;
+				b_wide = (e2_n*b1 + e3_n*b2 + e1_n*b3) * inv_area;
+				
+				r_mix = r_wide >>> FRAC;
+				g_mix = g_wide >>> FRAC;
+				b_mix = b_wide >>> FRAC;
+				*/
 				mixed_color = {r_mix[4:3], g_mix[5:4], b_mix[4:3]};
             end
 
@@ -423,8 +434,6 @@ module rasterizer #(
 
 				next_x_curr = sprite_x;
 				next_y_curr = sprite_y;
-
-				mixed_color = {sprite_r[4:3], sprite_g[5:4], sprite_b[4:3]};
 
 				next_state = SCAN_SPRITE;
 			end
@@ -446,6 +455,7 @@ module rasterizer #(
 					end
 				end
 
+				mixed_color = {sprite_r[4:3], sprite_g[5:4], sprite_b[4:3]};
 				pixel_valid = sprite_bits[sprite_idx] && y_curr <= sprite_y_max;
 			end
 
