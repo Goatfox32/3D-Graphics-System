@@ -52,16 +52,6 @@ void init_comm() {
     lw   = map_physical(fd, LW_BRIDGE_BASE, LW_BRIDGE_SIZE);
     sdr  = map_physical(fd, SDR_BASE, SDR_SIZE);
     data = (volatile uint8_t*) map_physical(fd, BUFFER_BASE, BUFFER_SIZE);
-
-    // --- temporary bridge sanity test ---
-    printf("status at rest:        0x%02x\n", lw[GPU_STATUS] & 0xFF);
-
-    lw[GPU_CONTROL] = 0x1;
-    printf("after control=1:       0x%02x\n", lw[GPU_STATUS] & 0xFF);
-
-    lw[GPU_CONTROL] = 0x0;
-    printf("after control=0:       0x%02x\n", lw[GPU_STATUS] & 0xFF);
-    // --- end test ---
 }
 
 void send_command(uint8_t cmd, uint8_t *arg, int command_len) {
@@ -90,22 +80,10 @@ uint8_t read_status() {
 
 void clear() {
     send_command(0x01, NULL, 1);
-    send_command(0x00, NULL, 1); // Test out NOP
-
-    /* Draw entire screen black ??
-    draw_triangle(0,     0, 0,  0,  0,
-                  319,   0, 0,  0,  0,
-                  0,   239, 0,  0,  0);
-    draw_triangle(239, 319, 0,  0,  0,
-                  329,   0, 0,  0,  0,
-                  0,   239, 0,  0,  0);
-    */
 }
 
-// Do NOT use (not implemented in command processor)
-void draw_pixel(int x, int y, int r, int g, int b) {
-    uint8_t args[3] = { (uint8_t)r, (uint8_t)g, (uint8_t)b };
-    //send_command(0x02, args, 4);
+void present_frame() {
+    send_command(0x02, NULL, 1);
 }
 
 void draw_triangle(int x1, int y1, int r1, int g1, int b1,
@@ -113,9 +91,7 @@ void draw_triangle(int x1, int y1, int r1, int g1, int b1,
                    int x3, int y3, int r3, int g3, int b3) {
 
     uint64_t vertex0 = pack_vertex(x1, y1, r1, g1, b1);
-    
     uint64_t vertex1 = pack_vertex(x2, y2, r2, g2, b2);
-    
     uint64_t vertex2 = pack_vertex(x3, y3, r3, g3, b3);
     
     uint8_t args[31];

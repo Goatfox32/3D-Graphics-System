@@ -1,0 +1,522 @@
+// demos.c
+// Visual demos.
+
+#define _POSIX_C_SOURCE 200112L
+
+#include "demos.h"
+#include "comm.h"
+#include "config.h"
+#include "input.h"
+#include "sprites.h"
+
+#include <math.h>
+#include <stdint.h>
+#include <unistd.h>
+
+#define FRAME_TARGET_US 33000   // ~30 fps cap; tune after benchmarking
+
+/// My demo
+static int frame;
+static uint64_t slash_sprite;
+static uint64_t solid_sprite;
+static uint64_t dot_sprite;
+
+static void run_full_demo(void) {
+    clear();
+
+    float time = frame * 0.03f;
+    draw_triangle(30*sin(time)    + 50, 30*cos(time)    + 200, 31,0,0, 
+                  30*sin(time+7)  + 50, 30*cos(time+7)  + 200, 0,0,0, 
+                  30*sin(time+10) + 50, 30*cos(time+10) + 200, 0,0,0);
+    draw_triangle(30*sin(time)    + 80, 30*cos(time)    + 180, 0,31,0, 
+                  30*sin(time+4)  + 80, 30*cos(time+4)  + 180, 0,0,0, 
+                  30*sin(time+20) + 80, 30*cos(time+20) + 180, 0,0,0);
+    draw_triangle(30*sin(time)    + 270, 30*cos(time)    + 160, 0,48,31, 
+                  30*sin(time+3)  + 270, 30*cos(time+3)  + 160, 0,0,0, 
+                  30*sin(time+6) + 270, 30*cos(time+6) + 160, 0,0,0);
+    draw_triangle(30*sin(time)    + 120, 30*cos(time)    + 140, 31,63,0, 
+                  30*sin(time+15)  + 120, 30*cos(time+15)  + 140, 0,0,0, 
+                  30*sin(time+2) + 120, 30*cos(time+2) + 140, 0,0,0);
+    draw_triangle(30*sin(time)    + 230, 30*cos(time)    + 155, 0,0,31, 
+                  30*sin(time+3)  + 230, 30*cos(time+3)  + 155, 0,0,0, 
+                  30*sin(time+4) + 230, 30*cos(time+4) + 155, 0,0,0);
+    draw_triangle(30*sin(time)    + 180, 30*cos(time)    + 200, 0,63,0, 
+                  30*sin(time+5)  + 180, 30*cos(time+5)  + 200, 0,0,0, 
+                  30*sin(time+26) + 180, 30*cos(time+26) + 200, 0,0,0);
+
+    uint64_t text1[10] = {slash_sprite, slash_sprite,
+                         SPRITE('A'), SPRITE('N'), SPRITE('D'), SPRITE('R'), SPRITE('E'), SPRITE('A'),
+                         slash_sprite, slash_sprite};
+
+    uint64_t text2[10] = {slash_sprite, slash_sprite,
+                          SPRITE('C'), SPRITE('A'), SPRITE('J'), SPRITE('A'), SPRITE('R'), SPRITE('B'),
+                          slash_sprite, slash_sprite};
+    
+    uint64_t text3[4] = {SPRITE('H'), SPRITE('I'), SPRITE('E'), SPRITE('D')};
+
+    for (int i = 0; i < 10; i++) {
+        int px = (frame + i * 10) % SCREEN_W;
+        draw_sprite(px, 10, 31, 0, 31, &text1[i]);
+    }
+
+    for (int i = 0; i < 10; i++) {
+        int px = (frame + i * 10) % SCREEN_W;
+        draw_sprite(320 - px, 10, 31, 63, 0, &text2[i]);
+    }
+
+    draw_sprite(160, 50, 0, 63, 0, &text3[0]);
+    draw_sprite(170, 50, 0, 63, 0, &text3[1]);
+    draw_sprite(190, 50, 0, 63, 0, &text3[2]);
+    draw_sprite(200, 50, 0, 63, 0, &text3[3]);
+    if (frame % 32 > 7) draw_sprite(210, 50, 0, 63, 0, &dot_sprite);
+    if (frame % 32 > 15) draw_sprite(220, 50, 0, 63, 0, &dot_sprite);
+    if (frame % 32 > 23) draw_sprite(230, 50, 0, 63, 0, &dot_sprite);
+
+    for (int r2 = 0; r2 < 4; r2++) {
+        for (int g2 = 0; g2 < 4; g2++) {
+            for (int b2 = 0; b2 < 4; b2++) {
+
+                int x = b2 + (r2 % 2) * 4;
+                int y = g2 + (r2 / 2) * 4;
+
+                int r = r2 << 3;
+                int g = g2 << 4;
+                int b = b2 << 3;
+
+                draw_sprite(x*10 + 10, y*10 + 20, r, g, b, &solid_sprite);
+            }
+        }
+    }
+
+    present_frame();
+    frame++;
+    usleep(FRAME_TARGET_US);
+}
+
+void demo_full(void) {
+    sprites_init();
+    frame = 0;
+    slash_sprite = make_sprite(SMILEY);
+    solid_sprite = make_sprite(SOLID);
+    dot_sprite = make_sprite(DOT);
+
+    input_run_until_key(run_full_demo);
+}
+
+// ---- shared 3D helpers ---------------------------------------------------
+//
+// Right-handed coords, +X right, +Y up, +Z toward viewer. Camera sits at
+// origin looking down -Z. Simple perspective divide, no matrices.
+
+static void rotate_xy(float *x, float *y, float *z, float ax, float ay) {
+    // Rotate around X
+    float cx = cosf(ax), sx = sinf(ax);
+    float y1 = (*y) * cx - (*z) * sx;
+    float z1 = (*y) * sx + (*z) * cx;
+    // Rotate around Y
+    float cy = cosf(ay), sy = sinf(ay);
+    float x2 = (*x) * cy + z1 * sy;
+    float z2 = -(*x) * sy + z1 * cy;
+    *x = x2;
+    *y = y1;
+    *z = z2;
+}
+
+// Perspective project a point in camera space to screen space. The cube
+// lives a few units away on -Z so we add a depth offset before dividing.
+// Returns clipped screen coordinates.
+static void project(float x, float y, float z, int *sx, int *sy) {
+    const float depth = 4.0f;       // distance from camera to model origin
+    const float focal = 160.0f;     // bigger = more zoom; tuned for 320x240
+    float zc = z + depth;
+    if (zc < 0.1f) zc = 0.1f;       // avoid divide-by-zero / extreme values
+    float px = x * focal / zc;
+    float py = y * focal / zc;
+    // Screen origin is top-left, +Y down. We invert py so model +Y is up.
+    *sx = (int)(SCREEN_W / 2 + px);
+    *sy = (int)(SCREEN_H / 2 - py);
+}
+
+// ---- spinning cube -------------------------------------------------------
+
+// Cube vertices, unit cube centered at origin.
+static const float cube_verts[8][3] = {
+    {-1, -1, -1}, { 1, -1, -1}, { 1,  1, -1}, {-1,  1, -1},
+    {-1, -1,  1}, { 1, -1,  1}, { 1,  1,  1}, {-1,  1,  1},
+};
+
+// Six faces as quads. Vertex order is counter-clockwise when viewed from
+// outside the cube — that gives a consistent winding for back-face cull.
+static const int cube_faces[6][4] = {
+    {0, 3, 2, 1},  // -Z (back)
+    {4, 5, 6, 7},  // +Z (front)
+    {0, 4, 7, 3},  // -X (left)
+    {1, 2, 6, 5},  // +X (right)
+    {0, 1, 5, 4},  // -Y (bottom)
+    {3, 7, 6, 2},  // +Y (top)
+};
+
+// Distinct RGB565 colors so each face is obvious as the cube spins.
+// (R 0-31, G 0-63, B 0-31)
+static const int cube_face_colors[6][3] = {
+    {31,  0,  0},  // red
+    { 0, 63,  0},  // green
+    { 0,  0, 31},  // blue
+    {31, 63,  0},  // yellow
+    {31,  0, 31},  // magenta
+    { 0, 63, 31},  // cyan
+};
+
+static int cube_frame;
+
+static void cube_frame_body(void) {
+    clear();
+
+    float t = cube_frame * 0.03f;
+    float ax = t * 0.7f;
+    float ay = t;
+
+    // Transform every vertex once.
+    int   sv[8][2];
+    for (int i = 0; i < 8; i++) {
+        float x = cube_verts[i][0];
+        float y = cube_verts[i][1];
+        float z = cube_verts[i][2];
+        rotate_xy(&x, &y, &z, ax, ay);
+        project(x, y, z, &sv[i][0], &sv[i][1]);
+    }
+
+    // Draw faces with screen-space back-face culling.
+    // Cull test: cross product of edges (v0->v1) x (v0->v2). Sign tells us
+    // winding direction in screen space. Because project() inverts Y, a
+    // CCW-from-outside face appears clockwise on screen, so the cross
+    // product is negative for front faces. If the cube looks inside-out,
+    // flip the >= to <=.
+    for (int f = 0; f < 6; f++) {
+        const int *q = cube_faces[f];
+        int e1x = sv[q[1]][0] - sv[q[0]][0];
+        int e1y = sv[q[1]][1] - sv[q[0]][1];
+        int e2x = sv[q[2]][0] - sv[q[0]][0];
+        int e2y = sv[q[2]][1] - sv[q[0]][1];
+        if (e1x * e2y - e1y * e2x <= 0) continue;  // back-facing
+
+        const int *c = cube_face_colors[f];
+        // Quad as two triangles: (v0,v1,v2) and (v0,v2,v3).
+        // Only v1's color is used; v2/v3 colors are obsolete (no blending).
+        draw_triangle(sv[q[0]][0], sv[q[0]][1], c[0], c[1], c[2],
+                      sv[q[1]][0], sv[q[1]][1], 0, 0, 0,
+                      sv[q[2]][0], sv[q[2]][1], 0, 0, 0);
+        draw_triangle(sv[q[0]][0], sv[q[0]][1], c[0], c[1], c[2],
+                      sv[q[2]][0], sv[q[2]][1], 0, 0, 0,
+                      sv[q[3]][0], sv[q[3]][1], 0, 0, 0);
+    }
+
+    present_frame();
+    cube_frame++;
+    usleep(FRAME_TARGET_US);
+}
+
+void demo_spinning_cube(void) {
+    cube_frame = 0;
+    input_run_until_key(cube_frame_body);
+}
+
+// ---- DVD bouncing logo ---------------------------------------------------
+//
+// Logo is a chunky hexagon-ish shape made of 4 triangles, drawn relative
+// to a center point (cx, cy). Floats track position and velocity; integers
+// are used for drawing. On each wall hit, velocity component flips and
+// the color advances through a fixed palette.
+ 
+#define DVD_HALF_W  24
+#define DVD_HALF_H  14
+ 
+// Hexagon offsets from center: top, right, bottom, left + two side points.
+// Drawn as 4 triangles fanning from the center.
+//   pts[0] = top
+//   pts[1] = upper-right
+//   pts[2] = lower-right
+//   pts[3] = bottom
+//   pts[4] = lower-left
+//   pts[5] = upper-left
+static const int dvd_pts[6][2] = {
+    {   0,         -DVD_HALF_H },
+    {  DVD_HALF_W, -DVD_HALF_H/2 },
+    {  DVD_HALF_W,  DVD_HALF_H/2 },
+    {   0,          DVD_HALF_H },
+    { -DVD_HALF_W,  DVD_HALF_H/2 },
+    { -DVD_HALF_W, -DVD_HALF_H/2 },
+};
+ 
+// Triangle fan from center (0,0) to consecutive perimeter pairs.
+static const int dvd_tris[6][2] = {
+    {0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}, {5, 0},
+};
+ 
+// Palette in RGB565. Bright, distinct, easy to tell apart on the bounce.
+static const int dvd_palette[][3] = {
+    {31,  0,  0},  // red
+    {31, 31,  0},  // orange
+    {31, 63,  0},  // yellow
+    { 0, 63,  0},  // green
+    { 0, 63, 31},  // cyan
+    { 0,  0, 31},  // blue
+    {31,  0, 31},  // magenta
+    {31, 63, 31},  // white
+};
+#define DVD_PALETTE_COUNT ((int)(sizeof(dvd_palette) / sizeof(dvd_palette[0])))
+ 
+static float dvd_x, dvd_y;
+static float dvd_vx, dvd_vy;
+static int   dvd_color_idx;
+
+// Draw "DVD" letters as triangle strokes, centered on (cx, cy).
+// Each letter is ~10 wide × 12 tall. Spacing 14 between letter centers.
+static void draw_dvd_text(int cx, int cy, int r, int g, int b) {
+    // Letter half-sizes
+    const int W = 5;   // half-width
+    const int H = 6;   // half-height
+    const int T = 1;   // stroke half-thickness
+    const int SP = 14; // letter center spacing
+
+    // Helper macro for an axis-aligned filled rect (2 triangles).
+    // Uses single-color since vertex blending is gone.
+    #define RECT(x0,y0,x1,y1) do { \
+        draw_triangle((x0),(y0), r,g,b,  (x1),(y0), 0,0,0,  (x1),(y1), 0,0,0); \
+        draw_triangle((x0),(y0), r,g,b,  (x1),(y1), 0,0,0,  (x0),(y1), 0,0,0); \
+    } while(0)
+
+    // ---- D (left) ----
+    int dx = cx - SP;
+    RECT(dx - W,     cy - H, dx - W + 2*T, cy + H);          // left vertical
+    RECT(dx - W,     cy - H, dx + W - T,   cy - H + 2*T);    // top
+    RECT(dx - W,     cy + H - 2*T, dx + W - T, cy + H);      // bottom
+    RECT(dx + W - 2*T, cy - H + T, dx + W,    cy + H - T);   // right vertical (slightly inset)
+
+    // ---- V (middle) ----
+    int vx = cx;
+    // Two diagonal strokes meeting at the bottom. Approximated as triangles.
+    draw_triangle(vx - W,     cy - H,         r,g,b,
+                  vx - W + 2*T, cy - H,       0,0,0,
+                  vx,           cy + H,       0,0,0);
+    draw_triangle(vx - W + 2*T, cy - H,       r,g,b,
+                  vx + T,       cy + H,       0,0,0,
+                  vx,           cy + H,       0,0,0);
+    draw_triangle(vx + W,     cy - H,         r,g,b,
+                  vx + W - 2*T, cy - H,       0,0,0,
+                  vx,           cy + H,       0,0,0);
+    draw_triangle(vx + W - 2*T, cy - H,       r,g,b,
+                  vx - T,       cy + H,       0,0,0,
+                  vx,           cy + H,       0,0,0);
+
+    // ---- D (right) ----
+    int d2x = cx + SP;
+    RECT(d2x - W,     cy - H, d2x - W + 2*T, cy + H);
+    RECT(d2x - W,     cy - H, d2x + W - T,   cy - H + 2*T);
+    RECT(d2x - W,     cy + H - 2*T, d2x + W - T, cy + H);
+    RECT(d2x + W - 2*T, cy - H + T, d2x + W,    cy + H - T);
+
+    #undef RECT
+}
+
+static void dvd_frame_body(void) {
+    clear();
+ 
+    // Update position.
+    dvd_x += dvd_vx;
+    dvd_y += dvd_vy;
+ 
+    // Bounce off walls. Reflect AND clamp so we never end up outside on
+    // the next frame, which would cause the logo to "stick" to a wall.
+    int bounced = 0;
+    if (dvd_x - DVD_HALF_W < 0) {
+        dvd_x = DVD_HALF_W;
+        dvd_vx = -dvd_vx;
+        bounced = 1;
+    } else if (dvd_x + DVD_HALF_W >= SCREEN_W) {
+        dvd_x = SCREEN_W - DVD_HALF_W - 1;
+        dvd_vx = -dvd_vx;
+        bounced = 1;
+    }
+    if (dvd_y - DVD_HALF_H < 0) {
+        dvd_y = DVD_HALF_H;
+        dvd_vy = -dvd_vy;
+        bounced = 1;
+    } else if (dvd_y + DVD_HALF_H >= SCREEN_H) {
+        dvd_y = SCREEN_H - DVD_HALF_H - 1;
+        dvd_vy = -dvd_vy;
+        bounced = 1;
+    }
+    if (bounced) {
+        dvd_color_idx = (dvd_color_idx + 1) % DVD_PALETTE_COUNT;
+    }
+ 
+    // Draw the logo as a triangle fan from center.
+    int cx = (int)dvd_x;
+    int cy = (int)dvd_y;
+    const int *c = dvd_palette[dvd_color_idx];
+    for (int i = 0; i < 6; i++) {
+        int a = dvd_tris[i][0];
+        int b = dvd_tris[i][1];
+        draw_triangle(cx,                    cy,                    c[0], c[1], c[2],
+                      cx + dvd_pts[a][0],    cy + dvd_pts[a][1],    0, 0, 0,
+                      cx + dvd_pts[b][0],    cy + dvd_pts[b][1],    0, 0, 0);
+    }
+
+    draw_dvd_text(cx, cy, 0, 0, 0);  // black text on the colored hexagon
+
+ 
+    present_frame();
+    usleep(FRAME_TARGET_US / 2);
+}
+ 
+void demo_dvd_bounce(void) {
+    dvd_x = SCREEN_W / 2;
+    dvd_y = SCREEN_H / 2;
+    dvd_vx = 1.7f;   // non-integer so it doesn't repeat too quickly
+    dvd_vy = 1.1f;
+    dvd_color_idx = 0;
+    input_run_until_key(dvd_frame_body);
+}
+
+// ---- Game of Life --------------------------------------------------------
+//
+// 80x60 grid of 4x4 pixel cells on a 320x240 screen. Toroidal wrap. Seeded
+// with an R-pentomino in the center, which evolves for ~1100 generations
+// producing gliders, blinkers, and eventually stabilizing. When the grid
+// goes fully static we reseed with a random pattern so the demo never
+// freezes during a presentation.
+ 
+#define GOL_CELL   4
+#define GOL_W      (SCREEN_W / GOL_CELL)   // 80
+#define GOL_H      (SCREEN_H / GOL_CELL)   // 60
+#define GOL_STATIC_LIMIT 120               // frames of no change before reseed
+ 
+static uint8_t gol_a[GOL_H][GOL_W];
+static uint8_t gol_b[GOL_H][GOL_W];
+static uint8_t (*gol_cur)[GOL_W];
+static uint8_t (*gol_nxt)[GOL_W];
+static int gol_static_frames;
+static int gol_frame;
+ 
+// Simple LCG so we don't touch benchmark rand() state.
+static uint32_t gol_rng;
+static uint32_t gol_rand(void) {
+    gol_rng = gol_rng * 1103515245u + 12345u;
+    return gol_rng;
+}
+ 
+static void gol_clear_board(uint8_t board[GOL_H][GOL_W]) {
+    for (int y = 0; y < GOL_H; y++)
+        for (int x = 0; x < GOL_W; x++)
+            board[y][x] = 0;
+}
+ 
+static void gol_seed_rpentomino(void) {
+    gol_clear_board(gol_a);
+    int cx = GOL_W / 2;
+    int cy = GOL_H / 2;
+    // R-pentomino:
+    //   .##
+    //   ##.
+    //   .#.
+    gol_a[cy - 1][cx    ] = 1;
+    gol_a[cy - 1][cx + 1] = 1;
+    gol_a[cy    ][cx - 1] = 1;
+    gol_a[cy    ][cx    ] = 1;
+    gol_a[cy + 1][cx    ] = 1;
+}
+ 
+static void gol_seed_random(void) {
+    for (int y = 0; y < GOL_H; y++)
+        for (int x = 0; x < GOL_W; x++)
+            gol_a[y][x] = (gol_rand() & 3) == 0;   // ~25% alive
+}
+ 
+static void gol_step(void) {
+    for (int y = 0; y < GOL_H; y++) {
+        int ym = (y - 1 + GOL_H) % GOL_H;
+        int yp = (y + 1) % GOL_H;
+        for (int x = 0; x < GOL_W; x++) {
+            int xm = (x - 1 + GOL_W) % GOL_W;
+            int xp = (x + 1) % GOL_W;
+            int n = gol_cur[ym][xm] + gol_cur[ym][x] + gol_cur[ym][xp]
+                  + gol_cur[y ][xm]                  + gol_cur[y ][xp]
+                  + gol_cur[yp][xm] + gol_cur[yp][x] + gol_cur[yp][xp];
+            uint8_t alive = gol_cur[y][x];
+            // B3/S23: survive on 2-3 neighbors, born on exactly 3.
+            gol_nxt[y][x] = (alive && (n == 2 || n == 3)) || (!alive && n == 3);
+        }
+    }
+}
+ 
+static void gol_frame_body(void) {
+    clear();
+ 
+    // Slow color cycle — one change every ~2 seconds at 30 fps.
+    static const int palette[][3] = {
+        { 0, 63, 31},  // cyan
+        { 0, 63,  0},  // green
+        {31, 63,  0},  // yellow
+        {31,  0,  0},  // red
+        {31,  0, 31},  // magenta
+        { 0,  0, 31},  // blue
+    };
+    int palette_count = (int)(sizeof(palette) / sizeof(palette[0]));
+    const int *c = palette[(gol_frame / 60) % palette_count];
+ 
+    // Draw every live cell as a quad (2 triangles).
+    for (int y = 0; y < GOL_H; y++) {
+        for (int x = 0; x < GOL_W; x++) {
+            if (!gol_cur[y][x]) continue;
+            int px  = x * GOL_CELL;
+            int py  = y * GOL_CELL;
+            int px2 = px + GOL_CELL - 1;
+            int py2 = py + GOL_CELL - 1;
+            draw_triangle(px,  py,  c[0], c[1], c[2],
+                          px2, py,  0, 0, 0,
+                          px2, py2, 0, 0, 0);
+            draw_triangle(px,  py,  c[0], c[1], c[2],
+                          px2, py2, 0, 0, 0,
+                          px,  py2, 0, 0, 0);
+        }
+    }
+ 
+    present_frame();
+ 
+    // Step the simulation. Detect static board (stable state or period-1
+    // still life covering everything) and reseed if nothing's happening.
+    gol_step();
+    int changed = 0;
+    for (int y = 0; y < GOL_H && !changed; y++)
+        for (int x = 0; x < GOL_W && !changed; x++)
+            if (gol_cur[y][x] != gol_nxt[y][x]) changed = 1;
+ 
+    // Swap buffers.
+    uint8_t (*tmp)[GOL_W] = gol_cur;
+    gol_cur = gol_nxt;
+    gol_nxt = tmp;
+ 
+    if (!changed) gol_static_frames++;
+    else          gol_static_frames = 0;
+ 
+    if (gol_static_frames > GOL_STATIC_LIMIT) {
+        gol_seed_random();
+        gol_cur = gol_a;
+        gol_nxt = gol_b;
+        gol_static_frames = 0;
+    }
+ 
+    gol_frame++;
+    usleep(FRAME_TARGET_US);
+}
+ 
+void demo_game_of_life(void) {
+    gol_rng = 0xDEADBEEFu;
+    gol_seed_rpentomino();
+    gol_cur = gol_a;
+    gol_nxt = gol_b;
+    gol_frame = 0;
+    gol_static_frames = 0;
+    input_run_until_key(gol_frame_body);
+}

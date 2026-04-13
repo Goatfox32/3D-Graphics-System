@@ -1,21 +1,19 @@
 // benchmarks.c
 // Performance benchmarks for the GPU C library.
-
-// Required for clock_gettime / CLOCK_MONOTONIC under -std=c99.
-// Must come before any system header.
-#define _POSIX_C_SOURCE 200112L
 //
 // THROUGHPUT tests issue N commands as fast as possible, then wait for the
-// GPU to drain (busy bit clears), and divide by wall-clock time. This is
-// the sustained rate the host+FPGA pipeline can achieve including any
-// queueing inside send_command. If send_command blocks per command,
-// throughput will roughly equal 1/latency. If there's a deep command FIFO,
-// throughput will be much higher than 1/latency.
+// GPU to drain (busy bit clears), and divide by wall-clock time. A single
+// present_frame() is issued at the end so the result is visible without
+// distorting the per-command timing.
 //
 // LATENCY tests issue one command and poll the busy bit until it clears,
 // then repeat. The reported number is round-trip time (host issue ->
 // command done as observed by host status read), so it includes status-
-// read MMIO time. It's an upper bound on the GPU's actual processing time.
+// read MMIO time. No present_frame in the inner loop — we're measuring
+// command sequencing, not frame presentation.
+
+// Required for clock_gettime / CLOCK_MONOTONIC under -std=c99.
+#define _POSIX_C_SOURCE 200112L
 
 #include "benchmarks.h"
 #include "comm.h"
@@ -42,17 +40,10 @@ static int rnd_range(int lo, int hi) {
     return lo + rand() % (hi - lo + 1);
 }
 
-// Dummy texture for sprite benchmarking. Replace with the real format /
-// size your draw_sprite expects if it matters.
-static uint64_t dummy_texture[16] = {
-    0x0123456789ABCDEFULL, 0xFEDCBA9876543210ULL,
-    0xAAAAAAAAAAAAAAAAULL, 0x5555555555555555ULL,
-    0xFF00FF00FF00FF00ULL, 0x00FF00FF00FF00FFULL,
-    0xDEADBEEFCAFEBABEULL, 0xBADC0FFEE0DDF00DULL,
-    0x1111111111111111ULL, 0x2222222222222222ULL,
-    0x3333333333333333ULL, 0x4444444444444444ULL,
-    0x5555555555555555ULL, 0x6666666666666666ULL,
-    0x7777777777777777ULL, 0x8888888888888888ULL,
+// Dummy texture for sprite benchmarking. Replace with a real 8x8 1bpp
+// pattern if your draw_sprite expects something specific.
+static uint64_t dummy_texture[1] = {
+    0xFF818181818181FFULL,  // hollow square-ish
 };
 
 // ---- throughput ----------------------------------------------------------
@@ -64,12 +55,9 @@ void bench_clear(int n) {
     for (int i = 0; i < n; i++) clear();
     wait_idle();
     double dt = now_sec() - t0;
+    present_frame();
     printf("%7.3f s   %12.1f ops/s   %8.3f ms/op\n",
            dt, n / dt, dt * 1000.0 / n);
-}
-
-void bench_pixel_NOT_IMPLEMENTED(void) {
-    printf("[pixel         ] draw_pixel is not implemented in the command processor; skipped\n");
 }
 
 static void bench_triangle_box(int n, int box, const char *label) {
@@ -79,14 +67,18 @@ static void bench_triangle_box(int n, int box, const char *label) {
     for (int i = 0; i < n; i++) {
         int x = rnd_range(0, SCREEN_W - box - 1);
         int y = rnd_range(0, SCREEN_H - box - 1);
-        // r,g,b per vertex (matches comm.c, NOT the typo in comm.h)
+        // Only vertex 1's color is used; v2/v3 colors are obsolete (no blending).
+        int r = rnd_range(0, R_MAX);
+        int g = rnd_range(0, G_MAX);
+        int b = rnd_range(0, B_MAX);
         draw_triangle(
-            x,         y,           rnd_range(0,R_MAX), rnd_range(0,G_MAX), rnd_range(0,B_MAX),
-            x + box,   y,           rnd_range(0,R_MAX), rnd_range(0,G_MAX), rnd_range(0,B_MAX),
-            x + box/2, y + box,     rnd_range(0,R_MAX), rnd_range(0,G_MAX), rnd_range(0,B_MAX));
+            x,         y,           r, g, b,
+            x + box,   y,           0, 0, 0,
+            x + box/2, y + box,     0, 0, 0);
     }
     wait_idle();
     double dt = now_sec() - t0;
+    present_frame();
     double pix = (double)n * box * box * 0.5; // approx filled area
     printf("%7.3f s   %12.1f tri/s   %8.2f Mpix/s\n",
            dt, n / dt, pix / dt / 1e6);
@@ -113,6 +105,7 @@ void bench_sprite(int n) {
     }
     wait_idle();
     double dt = now_sec() - t0;
+    present_frame();
     printf("%7.3f s   %12.1f ops/s\n", dt, n / dt);
 }
 
@@ -121,11 +114,12 @@ void bench_sprite(int n) {
 typedef void (*op_fn)(void);
 
 static void op_clear(void)     { clear(); }
-static void op_tri_small(void) { draw_triangle(10,10, R_MAX,0,0,  30,10, 0,G_MAX,0,  20,30, 0,0,B_MAX); }
+static void op_present(void)   { present_frame(); }
+static void op_tri_small(void) { draw_triangle(10,10, R_MAX,G_MAX,0,  30,10, 0,0,0,  20,30, 0,0,0); }
 static void op_tri_large(void) {
-    draw_triangle(0,0,                R_MAX,0,0,
-                  SCREEN_W-1,0,       0,G_MAX,0,
-                  SCREEN_W/2,SCREEN_H-1, 0,0,B_MAX);
+    draw_triangle(0,0,                R_MAX,G_MAX,B_MAX,
+                  SCREEN_W-1,0,       0,0,0,
+                  SCREEN_W/2,SCREEN_H-1, 0,0,0);
 }
 static void op_sprite(void)    { draw_sprite(SCREEN_W/2, SCREEN_H/2, R_MAX, G_MAX, B_MAX, dummy_texture); }
 
@@ -148,7 +142,8 @@ static void measure_latency(const char *label, op_fn fn, int n) {
 
 void bench_latency(int n) {
     printf("[latency       ] round-trip incl. status polling\n");
-    measure_latency("clear",     op_clear,     n < 100 ? n : 100);  // clear is slow
+    measure_latency("clear",     op_clear,     n < 100 ? n : 100);
+    measure_latency("present",   op_present,   n < 100 ? n : 100);
     measure_latency("tri small", op_tri_small, n);
     measure_latency("tri large", op_tri_large, n < 200 ? n : 200);
     measure_latency("sprite",    op_sprite,    n);

@@ -1,0 +1,36 @@
+// input.h
+// Non-blocking stdin helpers for demos and the playground.
+//
+// Usage:
+//   input_raw_mode_enable();
+//   while (!key_pressed()) {
+//       ...draw frame...
+//       present_frame();
+//   }
+//   input_raw_mode_disable();
+//
+// Or just use input_run_until_key(fn) which handles setup/teardown for you.
+
+#ifndef INPUT_H
+#define INPUT_H
+
+// Put the terminal into non-canonical, no-echo mode so single keypresses
+// are readable immediately without waiting for Enter.
+void input_raw_mode_enable(void);
+
+// Restore the terminal to whatever it was before raw mode.
+void input_raw_mode_disable(void);
+
+// Non-blocking: returns 1 if a key is waiting in stdin, 0 otherwise.
+// Does NOT consume the key.
+int key_pressed(void);
+
+// Consume and return one waiting byte. Returns -1 if none. Non-blocking.
+int read_key(void);
+
+// Convenience: enable raw mode, call fn() repeatedly until any key is
+// pressed, then drain the key, disable raw mode, and return.
+// fn() is your per-frame body (do its own draw + present_frame).
+void input_run_until_key(void (*fn)(void));
+
+#endif
