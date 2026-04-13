@@ -3,25 +3,33 @@
 #include <stdio.h>
 #include "comm.h"
 #include "sprites.h"
-#include "demos.h"
 
+/*
 int main() {
 
     init_comm();
 
-    // Read status back from the GPU
-    uint8_t status = read_status();
-    printf("GPU Status: 0x%02X\n", status);
 
-    //int exit = 0;
-    //spinning_cube_demo(&exit);
-    // draw_triangle(160,  10, 31,  0,  0,
-    //               20,  200,  0, 63,  0,
-    //               300, 200,  0,  0, 31);
-    
     clear();
-    int exit = 0;
-    spinning_cube_demo(&exit);
+    draw_triangle(160,  10, 0,  0,  24,
+                  20,  200, 0,  63,  0,
+                  300, 200, 0,  0,  31);
 
+    // usleep(3300000);
+
+    // uint64_t smile = SMILEY_FACE;
+    // draw_sprite(40, 10, 0, 0, 31, &smile);
+
+    return 0;
+} */
+
+int main(void) {
+    init_comm();
+    clear();
+    // Write extra bytes to data[] WITHOUT issuing another command.
+    // Need to expose `data` from comm.c — either extern it, or move
+    // this loop into a temporary helper inside comm.c.
+    extern volatile uint8_t *data;
+    for (int i = 1; i < 64; i++) data[i] = 0;
     return 0;
 }

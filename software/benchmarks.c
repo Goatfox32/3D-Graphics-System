@@ -1,0 +1,170 @@
+// benchmarks.c
+// Performance benchmarks for the GPU C library.
+
+// Required for clock_gettime / CLOCK_MONOTONIC under -std=c99.
+// Must come before any system header.
+#define _POSIX_C_SOURCE 200112L
+//
+// THROUGHPUT tests issue N commands as fast as possible, then wait for the
+// GPU to drain (busy bit clears), and divide by wall-clock time. This is
+// the sustained rate the host+FPGA pipeline can achieve including any
+// queueing inside send_command. If send_command blocks per command,
+// throughput will roughly equal 1/latency. If there's a deep command FIFO,
+// throughput will be much higher than 1/latency.
+//
+// LATENCY tests issue one command and poll the busy bit until it clears,
+// then repeat. The reported number is round-trip time (host issue ->
+// command done as observed by host status read), so it includes status-
+// read MMIO time. It's an upper bound on the GPU's actual processing time.
+
+#include "benchmarks.h"
+#include "comm.h"
+#include "config.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <time.h>
+
+// ---- helpers -------------------------------------------------------------
+
+static double now_sec(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
+}
+
+static void wait_idle(void) {
+    while (read_status() & 0x1) { /* busy */ }
+}
+
+static int rnd_range(int lo, int hi) {
+    return lo + rand() % (hi - lo + 1);
+}
+
+// Dummy texture for sprite benchmarking. Replace with the real format /
+// size your draw_sprite expects if it matters.
+static uint64_t dummy_texture[16] = {
+    0x0123456789ABCDEFULL, 0xFEDCBA9876543210ULL,
+    0xAAAAAAAAAAAAAAAAULL, 0x5555555555555555ULL,
+    0xFF00FF00FF00FF00ULL, 0x00FF00FF00FF00FFULL,
+    0xDEADBEEFCAFEBABEULL, 0xBADC0FFEE0DDF00DULL,
+    0x1111111111111111ULL, 0x2222222222222222ULL,
+    0x3333333333333333ULL, 0x4444444444444444ULL,
+    0x5555555555555555ULL, 0x6666666666666666ULL,
+    0x7777777777777777ULL, 0x8888888888888888ULL,
+};
+
+// ---- throughput ----------------------------------------------------------
+
+void bench_clear(int n) {
+    printf("[clear         ] %6d ops ... ", n); fflush(stdout);
+    wait_idle();
+    double t0 = now_sec();
+    for (int i = 0; i < n; i++) clear();
+    wait_idle();
+    double dt = now_sec() - t0;
+    printf("%7.3f s   %12.1f ops/s   %8.3f ms/op\n",
+           dt, n / dt, dt * 1000.0 / n);
+}
+
+void bench_pixel_NOT_IMPLEMENTED(void) {
+    printf("[pixel         ] draw_pixel is not implemented in the command processor; skipped\n");
+}
+
+static void bench_triangle_box(int n, int box, const char *label) {
+    printf("[%-14s] %6d ops ... ", label, n); fflush(stdout);
+    wait_idle();
+    double t0 = now_sec();
+    for (int i = 0; i < n; i++) {
+        int x = rnd_range(0, SCREEN_W - box - 1);
+        int y = rnd_range(0, SCREEN_H - box - 1);
+        // r,g,b per vertex (matches comm.c, NOT the typo in comm.h)
+        draw_triangle(
+            x,         y,           rnd_range(0,R_MAX), rnd_range(0,G_MAX), rnd_range(0,B_MAX),
+            x + box,   y,           rnd_range(0,R_MAX), rnd_range(0,G_MAX), rnd_range(0,B_MAX),
+            x + box/2, y + box,     rnd_range(0,R_MAX), rnd_range(0,G_MAX), rnd_range(0,B_MAX));
+    }
+    wait_idle();
+    double dt = now_sec() - t0;
+    double pix = (double)n * box * box * 0.5; // approx filled area
+    printf("%7.3f s   %12.1f tri/s   %8.2f Mpix/s\n",
+           dt, n / dt, pix / dt / 1e6);
+}
+
+void bench_triangle_small(int n)      { bench_triangle_box(n, 16,  "tri small");      }
+void bench_triangle_large(int n)      { bench_triangle_box(n, 128, "tri large");      }
+void bench_triangle_fullscreen(int n) {
+    int box = (SCREEN_W < SCREEN_H ? SCREEN_W : SCREEN_H) - 1;
+    bench_triangle_box(n, box, "tri fullscreen");
+}
+
+void bench_sprite(int n) {
+    printf("[sprite        ] %6d ops ... ", n); fflush(stdout);
+    wait_idle();
+    double t0 = now_sec();
+    for (int i = 0; i < n; i++) {
+        draw_sprite(rnd_range(0, SCREEN_W - 1),
+                    rnd_range(0, SCREEN_H - 1),
+                    rnd_range(0, R_MAX),
+                    rnd_range(0, G_MAX),
+                    rnd_range(0, B_MAX),
+                    dummy_texture);
+    }
+    wait_idle();
+    double dt = now_sec() - t0;
+    printf("%7.3f s   %12.1f ops/s\n", dt, n / dt);
+}
+
+// ---- latency -------------------------------------------------------------
+
+typedef void (*op_fn)(void);
+
+static void op_clear(void)     { clear(); }
+static void op_tri_small(void) { draw_triangle(10,10, R_MAX,0,0,  30,10, 0,G_MAX,0,  20,30, 0,0,B_MAX); }
+static void op_tri_large(void) {
+    draw_triangle(0,0,                R_MAX,0,0,
+                  SCREEN_W-1,0,       0,G_MAX,0,
+                  SCREEN_W/2,SCREEN_H-1, 0,0,B_MAX);
+}
+static void op_sprite(void)    { draw_sprite(SCREEN_W/2, SCREEN_H/2, R_MAX, G_MAX, B_MAX, dummy_texture); }
+
+static void measure_latency(const char *label, op_fn fn, int n) {
+    wait_idle();
+    double sum = 0, mn = 1e30, mx = 0;
+    for (int i = 0; i < n; i++) {
+        double t0 = now_sec();
+        fn();
+        while (read_status() & 0x1) { /* busy */ }
+        double dt = now_sec() - t0;
+        sum += dt;
+        if (dt < mn) mn = dt;
+        if (dt > mx) mx = dt;
+    }
+    double avg = sum / n;
+    printf("  %-14s n=%-5d  avg %9.2f us   min %9.2f us   max %9.2f us\n",
+           label, n, avg*1e6, mn*1e6, mx*1e6);
+}
+
+void bench_latency(int n) {
+    printf("[latency       ] round-trip incl. status polling\n");
+    measure_latency("clear",     op_clear,     n < 100 ? n : 100);  // clear is slow
+    measure_latency("tri small", op_tri_small, n);
+    measure_latency("tri large", op_tri_large, n < 200 ? n : 200);
+    measure_latency("sprite",    op_sprite,    n);
+}
+
+// ---- top-level ----------------------------------------------------------
+
+void bench_all(void) {
+    printf("\n--- THROUGHPUT (queued, drain at end) ---\n");
+    bench_clear(1000);
+    bench_triangle_small(10000);
+    bench_triangle_large(2000);
+    bench_triangle_fullscreen(200);
+    bench_sprite(5000);
+
+    printf("\n--- LATENCY (per-command round trip) ---\n");
+    bench_latency(1000);
+    printf("\n");
+}
