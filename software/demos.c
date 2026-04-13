@@ -103,6 +103,34 @@ void demo_full(void) {
     input_run_until_key(run_full_demo);
 }
 
+void playground(void) {
+
+    clear();
+    
+    draw_triangle(130, 100, 31, 63, 31,
+                  190, 100,  0, 0, 0,
+                  160, 150,  0, 0, 0);
+
+
+    
+    char *cool_sprite[8] = {
+        "..##..##",
+        "##....##",
+        "..####..",
+        "####....",
+        "..##..##",
+        "##....##",
+        "..####..",
+        "####....",
+    };
+
+    uint64_t sprite = make_sprite(cool_sprite);
+    draw_sprite(10, 10, 31, 0, 0, &sprite);
+    usleep(10000);
+
+    present_frame();
+}
+
 // ---- shared 3D helpers ---------------------------------------------------
 //
 // Right-handed coords, +X right, +Y up, +Z toward viewer. Camera sits at

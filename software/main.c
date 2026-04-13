@@ -9,7 +9,6 @@
 
 #include "comm.h"
 #include "benchmarks.h"
-#include "playground.h"
 #include "demos.h"
 
 // ---- shared menu plumbing -----------------------------------------------

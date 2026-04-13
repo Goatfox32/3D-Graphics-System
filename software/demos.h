@@ -6,6 +6,7 @@
 #define DEMOS_H
 
 void demo_full(void);
+void playground(void);
 void demo_spinning_cube(void);
 void demo_dvd_bounce(void);
 void demo_game_of_life(void);
