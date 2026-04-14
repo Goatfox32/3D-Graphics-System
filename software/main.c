@@ -9,7 +9,6 @@
 
 #include "comm.h"
 #include "benchmarks.h"
-#include "playground.h"
 #include "demos.h"
 
 // ---- shared menu plumbing -----------------------------------------------
@@ -95,6 +94,7 @@ static void m_demo1(void) { demo_full(); }
 static void m_demo2(void) { demo_spinning_cube(); }
 static void m_demo3(void) { demo_dvd_bounce(); }
 static void m_demo4(void) { demo_game_of_life(); }
+static void m_demo5(void) { demo_spinning_triangles(); }
 
 static menu_item top_items[] = {
     { "1", "full demo",            m_demo1         },
@@ -102,6 +102,7 @@ static menu_item top_items[] = {
     { "3", "DVD logo",            m_demo3         },
     { "4", "game of life",            m_demo4         },
     { "5", "benchmarks ->",  m_benchmarks    },
+    { "6", "game of life",            m_demo5         },
     { "p", "playground",     m_playground    },
     { "c", "clear + present", m_clear_present},
     { NULL, NULL, NULL }

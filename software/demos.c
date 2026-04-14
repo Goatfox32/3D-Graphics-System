@@ -28,21 +28,21 @@ static void run_full_demo(void) {
     draw_triangle(30*sin(time)    + 50, 30*cos(time)    + 200, 31,0,0, 
                   30*sin(time+7)  + 50, 30*cos(time+7)  + 200, 0,0,0, 
                   30*sin(time+10) + 50, 30*cos(time+10) + 200, 0,0,0);
-    draw_triangle(30*sin(time)    + 80, 30*cos(time)    + 180, 0,31,0, 
-                  30*sin(time+4)  + 80, 30*cos(time+4)  + 180, 0,0,0, 
-                  30*sin(time+20) + 80, 30*cos(time+20) + 180, 0,0,0);
-    draw_triangle(30*sin(time)    + 270, 30*cos(time)    + 160, 0,48,31, 
-                  30*sin(time+3)  + 270, 30*cos(time+3)  + 160, 0,0,0, 
-                  30*sin(time+6) + 270, 30*cos(time+6) + 160, 0,0,0);
-    draw_triangle(30*sin(time)    + 120, 30*cos(time)    + 140, 31,63,0, 
-                  30*sin(time+15)  + 120, 30*cos(time+15)  + 140, 0,0,0, 
-                  30*sin(time+2) + 120, 30*cos(time+2) + 140, 0,0,0);
-    draw_triangle(30*sin(time)    + 230, 30*cos(time)    + 155, 0,0,31, 
-                  30*sin(time+3)  + 230, 30*cos(time+3)  + 155, 0,0,0, 
-                  30*sin(time+4) + 230, 30*cos(time+4) + 155, 0,0,0);
-    draw_triangle(30*sin(time)    + 180, 30*cos(time)    + 200, 0,63,0, 
-                  30*sin(time+5)  + 180, 30*cos(time+5)  + 200, 0,0,0, 
-                  30*sin(time+26) + 180, 30*cos(time+26) + 200, 0,0,0);
+    draw_triangle(30*sin(2.0f*time)    + 80, 30*cos(2.0f*time)    + 180, 0,31,0, 
+                  30*sin(2.0f*time+4)  + 80, 30*cos(2.0f*time+4)  + 180, 0,0,0, 
+                  30*sin(2.0f*time+20) + 80, 30*cos(2.0f*time+20) + 180, 0,0,0);
+    draw_triangle(30*sin(1.3f*time)    + 270, 30*cos(1.3f*time)    + 160, 0,48,31, 
+                  30*sin(1.3f*time+3)  + 270, 30*cos(1.3f*time+3)  + 160, 0,0,0, 
+                  30*sin(1.3f*time+6) + 270,  30*cos(1.3f*time+6) + 160, 0,0,0);
+    draw_triangle(30*sin(0.8f*time)    + 120,  30*cos(0.8f*time)    + 140, 31,63,0, 
+                  30*sin(0.8f*time+15)  + 120, 30*cos(0.8f*time+15)  + 140, 0,0,0, 
+                  30*sin(0.8f*time+2) + 120,   30*cos(0.8f*time+2) + 140, 0,0,0);
+    draw_triangle(30*sin(2.1f*time)    + 230, 30*cos(2.1f*time)    + 155, 0,0,31, 
+                  30*sin(2.1f*time+3)  + 230, 30*cos(2.1f*time+3)  + 155, 0,0,0, 
+                  30*sin(2.1f*time+4) + 230,  30*cos(2.1f*time+4) + 155, 0,0,0);
+    draw_triangle(30*sin(1.5f*time)    + 180, 30*cos(1.5f*time)    + 200, 0,63,0, 
+                  30*sin(1.5f*time+5)  + 180, 30*cos(1.5f*time+5)  + 200, 0,0,0, 
+                  30*sin(1.5f*time+26) + 180, 30*cos(1.5f*time+26) + 200, 0,0,0);
 
     uint64_t text1[10] = {slash_sprite, slash_sprite,
                          SPRITE('A'), SPRITE('N'), SPRITE('D'), SPRITE('R'), SPRITE('E'), SPRITE('A'),
@@ -72,19 +72,20 @@ static void run_full_demo(void) {
     if (frame % 32 > 15) draw_sprite(220, 50, 0, 63, 0, &dot_sprite);
     if (frame % 32 > 23) draw_sprite(230, 50, 0, 63, 0, &dot_sprite);
 
-    for (int r2 = 0; r2 < 4; r2++) {
-        for (int g2 = 0; g2 < 4; g2++) {
-            for (int b2 = 0; b2 < 4; b2++) {
+    for (int y = 0; y < 8; y++) {
+        for (int x = 0; x < 8; x++) {
 
-                int x = b2 + (r2 % 2) * 4;
-                int y = g2 + (r2 / 2) * 4;
+            int color = y * 8 + x;
 
-                int r = r2 << 3;
-                int g = g2 << 4;
-                int b = b2 << 3;
+            int r2 = (color >> 4) & 3;
+            int g2 = (color >> 2) & 3;
+            int b2 = (color >> 0) & 3;
 
-                draw_sprite(x*10 + 10, y*10 + 20, r, g, b, &solid_sprite);
-            }
+            int r = r2 << 3;
+            int g = g2 << 4;
+            int b = b2 << 3;
+
+            draw_sprite(x*10 + 10, y*10 + 20, r, g, b, &solid_sprite);
         }
     }
 
@@ -101,6 +102,34 @@ void demo_full(void) {
     dot_sprite = make_sprite(DOT);
 
     input_run_until_key(run_full_demo);
+}
+
+void playground(void) {
+
+    clear();
+    
+    draw_triangle(130, 100, 31, 63, 31,
+                  190, 100,  0, 0, 0,
+                  160, 150,  0, 0, 0);
+
+
+    
+    char *cool_sprite[8] = {
+        "..##..##",
+        "##....##",
+        "..####..",
+        "####....",
+        "..##..##",
+        "##....##",
+        "..####..",
+        "####....",
+    };
+
+    uint64_t sprite = make_sprite(cool_sprite);
+    draw_sprite(10, 10, 31, 0, 0, &sprite);
+    usleep(10000);
+
+    present_frame();
 }
 
 // ---- shared 3D helpers ---------------------------------------------------
@@ -519,4 +548,53 @@ void demo_game_of_life(void) {
     gol_frame = 0;
     gol_static_frames = 0;
     input_run_until_key(gol_frame_body);
+}
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+ 
+static int st_frame;
+ 
+static void st_frame_body(void) {
+    clear();
+ 
+    float t = st_frame * 0.01f;
+ 
+    for (int i = 0; i < 3; i++) {
+        float phase = t + i * (2.0f * (float)M_PI / 3.0f);
+        float cx   = SCREEN_W / 2 + cosf(phase) * 70.0f;
+        float cy   = SCREEN_H / 2 + sinf(phase * 1.3f) * 50.0f;
+        float size = 30.0f + 20.0f * sinf(t * 2.0f + i);
+        float rot  = phase * 2.0f;
+ 
+        // Equilateral triangle vertices around (cx, cy).
+        int x0 = (int)(cx + size * cosf(rot));
+        int y0 = (int)(cy + size * sinf(rot));
+        int x1 = (int)(cx + size * cosf(rot + 2.0944f));   // +120°
+        int y1 = (int)(cy + size * sinf(rot + 2.0944f));
+        int x2 = (int)(cx + size * cosf(rot + 4.1888f));   // +240°
+        int y2 = (int)(cy + size * sinf(rot + 4.1888f));
+ 
+        // Single color per triangle (vertex blending is gone). Cycle each
+        // channel with a different frequency and per-triangle phase offset
+        // so the three triangles drift through colors out of sync.
+        // RGB565: R 0-31, G 0-63, B 0-31.
+        int r = (int)(15.5f + 15.5f * sinf(t        + i));
+        int g = (int)(31.5f + 31.5f * sinf(t * 1.1f + i + 2.0f));
+        int b = (int)(15.5f + 15.5f * sinf(t * 0.9f + i + 4.0f));
+ 
+        draw_triangle(x0, y0, r, g, b,
+                      x1, y1, 0, 0, 0,
+                      x2, y2, 0, 0, 0);
+    }
+ 
+    present_frame();
+    st_frame++;
+    usleep(FRAME_TARGET_US);
+}
+ 
+void demo_spinning_triangles(void) {
+    st_frame = 0;
+    input_run_until_key(st_frame_body);
 }

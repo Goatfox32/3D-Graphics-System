@@ -30,60 +30,67 @@ module vga_timing #(
 		end
 	end
   
-	logic h_pulse;
-	logic v_pulse;
-	logic visible;
+	logic h_pulse, h_pulse_r;
+	logic v_pulse, v_pulse_r;
+	logic visible, visible_r;
   
   
 	always_ff @(posedge clk_div) begin
-    if (~s1) begin
-        h_counter <= '0;
-        v_counter <= '0;
-        h_pulse   <= 1'b0;
-        v_pulse   <= 1'b0;
-    end
-	 
-    else begin
-	 
-		  // ----- H Sync -----
-        h_counter <= h_counter + 1'b1;
+		if (~s1) begin
+			h_counter <= '0;
+			v_counter <= '0;
+			h_pulse   <= 0;
+			v_pulse   <= 0;
+			h_pulse_r <= 0;
+			v_pulse_r <= 0;
+			visible_r <= 0;
+		end
+		
+		else begin
+			
+			h_pulse_r <= h_pulse;
+			v_pulse_r <= v_pulse;
+			visible_r <= visible;
 
-        if ((h_counter >= 656) && (h_counter < 752))
-            h_pulse <= 1'b1;
-        else
-            h_pulse <= 1'b0;
-				
-		  // ----- V Sync -----
+			// ----- H Sync -----
 
-        if (h_counter == H_SYNC_MAX - 1) begin
-            h_counter <= '0;
-            v_counter <= v_counter + 1'b1;
-        end
+			if ((h_counter >= 656) && (h_counter < 752))
+				h_pulse <= 1'b1;
+			else
+				h_pulse <= 1'b0;
+					
+			// ----- V Sync -----
 
-        if ((v_counter >= 490) && (v_counter < 492))
-            v_pulse <= 1'b1;
-        else
-            v_pulse <= 1'b0;
+			if (h_counter == H_SYNC_MAX - 1) begin
+				h_counter <= '0;
+				v_counter <= v_counter + 1'b1;
+			end else begin
+				h_counter <= h_counter + 1'b1;
+			end
 
-        if (v_counter == V_SYNC_MAX - 1)
-            v_counter <= '0;
-    end
+			if ((v_counter >= 490) && (v_counter < 492))
+				v_pulse <= 1'b1;
+			else
+				v_pulse <= 1'b0;
+
+			if (v_counter == V_SYNC_MAX - 1)
+				v_counter <= '0;
+		end
 	end
 	
 	assign visible = (h_counter < 640) && (v_counter < 480);
 	
 	assign read_x = visible ? (h_counter >> 1) : '0;
 	assign read_y = visible ? (v_counter >> 1) : '0;
-	
-		
-	assign GPIO_0[0] = ~h_pulse; // HSYNC active low
-	assign GPIO_0[1] = ~v_pulse; // VSYNC active low
 
-	assign GPIO_0[2] = visible ? pixel_in[4] : 1'b0; // R high bit
-	assign GPIO_0[3] = visible ? pixel_in[5] : 1'b0; // R low bit
-	assign GPIO_0[4] = visible ? pixel_in[2] : 1'b0; // G high bit
-	assign GPIO_0[5] = visible ? pixel_in[3] : 1'b0; // G low bit
-	assign GPIO_0[6] = visible ? pixel_in[0] : 1'b0; // B high bit
-	assign GPIO_0[7] = visible ? pixel_in[1] : 1'b0; // B low bit
+	assign GPIO_0[0] = ~h_pulse_r; // HSYNC active low
+	assign GPIO_0[1] = ~v_pulse_r; // VSYNC active low
+
+	assign GPIO_0[2] = visible_r ? pixel_in[4] : 1'b0; // R high bit
+	assign GPIO_0[3] = visible_r ? pixel_in[5] : 1'b0; // R low bit
+	assign GPIO_0[4] = visible_r ? pixel_in[2] : 1'b0; // G high bit
+	assign GPIO_0[5] = visible_r ? pixel_in[3] : 1'b0; // G low bit
+	assign GPIO_0[6] = visible_r ? pixel_in[0] : 1'b0; // B high bit
+	assign GPIO_0[7] = visible_r ? pixel_in[1] : 1'b0; // B low bit
 	
 endmodule
