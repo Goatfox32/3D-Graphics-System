@@ -1,6 +1,8 @@
-// demos.h
-// Visual demos. Each demo_* function is a self-contained menu entry that
-// runs until the user presses a key.
+// Braden Vanderwoerd
+// 2026-04-13
+// Documented by Claude Opus 4.6 - 2026-04-14
+// demos.h — Visual demo function declarations.
+// Each demo_* function is a self-contained animation that runs until the user presses a key.
 
 #ifndef DEMOS_H
 #define DEMOS_H

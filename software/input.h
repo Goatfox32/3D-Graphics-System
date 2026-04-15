@@ -1,5 +1,7 @@
-// input.h
-// Non-blocking stdin helpers for demos and the playground.
+// Braden Vanderwoerd
+// 2026-04-13
+// Documented by Claude Opus 4.6 - 2026-04-14
+// input.h — Non-blocking stdin helpers for demos and the playground.
 //
 // Usage:
 //   input_raw_mode_enable();

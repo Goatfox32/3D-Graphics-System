@@ -1,8 +1,15 @@
 // Braden Vanderwoerd & Jacob Edwards
-// 2026-04-06
+// 2026-04-13
+// Documented by Claude Opus 4.6 - 2026-04-14
 // Graphics System Top Module
-// This is the top-level module that integrates the command reader, command executer, FIFOs, and the Qsys system.
-// It also handles the interfacing with the HPS and the SDRAM, as well as the LED outputs for debugging.
+// Top-level integration for the DE10-Nano FPGA graphics system. Instantiates and connects:
+//   - Qsys system (HPS, DDR3, lightweight AXI bridge, PIO registers)
+//   - Command Reader  -> reads GPU commands from SDRAM via F2H master
+//   - Command/Data FIFOs -> buffer opcodes and payloads between reader and executer
+//   - Command Executer -> decodes commands and dispatches to rasterizer / frame buffer
+//   - Rasterizer       -> fills triangles and blits sprites to the frame buffer
+//   - Frame Buffer     -> dual-buffered pixel storage with VGA-timed reads
+//   - VGA Timing       -> generates sync signals and pixel output on GPIO
 
 `default_nettype none
 
@@ -50,12 +57,12 @@ module graphics_system_top (
 );
 
     // ==========================================
-    // PIO signals
+    // PIO signals (memory-mapped registers accessible by HPS via lightweight AXI bridge)
     // ==========================================
-    logic [7:0]  gpu_control_internal;
-    logic [7:0]  gpu_status_internal;
-    logic [31:0] cmd_addr_internal;
-    logic [31:0] cmd_size_internal;
+    logic [7:0]  gpu_control_internal; // HPS -> FPGA: bit 0 = start pulse
+    logic [7:0]  gpu_status_internal;  // FPGA -> HPS: bit 0 = busy, bit 1 = size error
+    logic [31:0] cmd_addr_internal;    // HPS -> FPGA: SDRAM byte address of command buffer
+    logic [31:0] cmd_size_internal;    // HPS -> FPGA: command size in bytes
 
     // ==========================================
     // F2H SDRAM0 wires
@@ -132,12 +139,14 @@ module graphics_system_top (
 	localparam int X_WIDTH    = 9;
 	localparam int Y_WIDTH    = 8;
 
-    // Reset holding logic
+    // --- Reset holding logic
+    // After s1 (reset button) is released, hold system_reset_n low for 1 second
+    // to allow SDRAM and HPS to stabilize before the command pipeline starts.
     logic [26:0] reset_counter;
     always_ff @(posedge clk50) begin
         if (!s1) begin
             reset_counter <= 0;
-        end else if (reset_counter < 27'd50_000_000) begin // Hold reset for 1 second
+        end else if (reset_counter < 27'd50_000_000) begin
             reset_counter <= reset_counter + 1;
         end
     end
@@ -150,7 +159,7 @@ module graphics_system_top (
         .read_addr          (cmd_addr_internal),
         .read_size          (cmd_size_internal),
         .status             (gpu_status_internal),
-        .control            (gpu_control_internal), // Edge detection is done inside the command processor !!!
+        .control            (gpu_control_internal), // Start edge detection is handled inside command_reader
   
         .avm_address        (f2h_sdram0_address),
         .avm_read           (f2h_sdram0_read),

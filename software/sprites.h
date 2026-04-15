@@ -1,10 +1,15 @@
+// Braden Vanderwoerd
+// 2026-04-13
+// Documented by Claude Opus 4.6 - 2026-04-14
+// sprites.h — 8x8 monochrome character sprites for text rendering.
+// Defines A-Z letter bitmaps as ASCII art, plus utility sprites (smiley, solid, dot).
+// Sprites are packed at runtime into uint64_t values matching the hardware bitmap format.
+
 #ifndef SPRITES_H
 #define SPRITES_H
 
 /*
- * 8x8 letter sprites, authored as ASCII art and packed into uint64_t at
- * runtime. Packing convention (matches the hardware expectation: LSB of
- * the 64-bit word is the top-left pixel):
+ * Packing convention (matches the hardware rasterizer's sprite bitmap format):
  *   - Row 0 (top) occupies bits 0..7   (the lowest byte)
  *   - Row 7 (bot) occupies bits 56..63 (the highest byte)
  *   - Within each row, column 0 (left) is bit 0 of that byte

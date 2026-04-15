@@ -1,5 +1,8 @@
-// main.c
-// Interactive launcher. Top-level: demos + playground + benchmarks + quit.
+// Braden Vanderwoerd
+// 2026-04-13
+// Documented by Claude Opus 4.6 - 2026-04-14
+// main.c — Interactive launcher for the GPU test suite.
+// Presents a text menu over UART: demos, playground, benchmarks, quit.
 // Each sub-menu is its own loop; "b" returns to the parent, "q" quits.
 
 #include <stdio.h>
@@ -13,6 +16,7 @@
 
 // ---- shared menu plumbing -----------------------------------------------
 
+// Each menu item maps a single-character key to a description and callback
 typedef struct {
     const char *key;
     const char *desc;
@@ -111,8 +115,8 @@ static menu_item top_items[] = {
 // ---- main ----------------------------------------------------------------
 
 int main(void) {
-    init_comm();
-    srand((unsigned)time(NULL));
+    init_comm();                     // Map physical memory regions for GPU communication
+    srand((unsigned)time(NULL));     // Seed RNG for benchmarks and demos
     run_menu("GPU Test Suite", top_items, "q", "quit");
     return 0;
 }

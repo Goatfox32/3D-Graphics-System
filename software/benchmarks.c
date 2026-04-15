@@ -1,5 +1,7 @@
-// benchmarks.c
-// Performance benchmarks for the GPU C library.
+// Braden Vanderwoerd
+// 2026-04-13
+// Documented by Claude Opus 4.6 - 2026-04-14
+// benchmarks.c — Performance benchmarks for the GPU command interface.
 //
 // THROUGHPUT tests issue N commands as fast as possible, then wait for the
 // GPU to drain (busy bit clears), and divide by wall-clock time. A single
@@ -26,12 +28,14 @@
 
 // ---- helpers -------------------------------------------------------------
 
+// High-resolution wall-clock time using POSIX monotonic clock
 static double now_sec(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
 }
 
+// Spin until the GPU's busy bit clears (command pipeline drained)
 static void wait_idle(void) {
     while (read_status() & 0x1) { /* busy */ }
 }

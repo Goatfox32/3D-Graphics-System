@@ -1,3 +1,13 @@
+# Braden Vanderwoerd & Jacob Edwards
+# 2026-04-13
+# Documented by Claude Opus 4.6 - 2026-04-14
+# Qsys/Platform Designer System Definition — graphics_system
+# Defines the SoC interconnect for the DE10-Nano graphics project:
+#   - HPS (ARM Cortex-A9) with DDR3, Ethernet, UART, USB, SD card
+#   - Lightweight AXI bridge -> four PIO registers (cmd_addr, cmd_size, gpu_control, gpu_status)
+#   - F2H SDRAM0 read-only port (64-bit Avalon-MM) for GPU command DMA
+# The generated .qsys file is consumed by Quartus to build the hardware system.
+
 package require -exact qsys 14.0
 
 create_system {graphics_system}
@@ -13,7 +23,7 @@ set_instance_parameter_value clk_0 {clockFrequencyKnown} {true}
 
 add_instance hps_0 altera_hps
 
-# Enable Peripherals
+# Enable HPS peripherals (directly wired to DE10-Nano board I/O)
 set_instance_parameter_value hps_0 {SDIO_PinMuxing} {HPS I/O Set 0}
 set_instance_parameter_value hps_0 {SDIO_Mode} {4-bit Data}
 set_instance_parameter_value hps_0 {UART0_PinMuxing} {HPS I/O Set 0}
@@ -24,28 +34,30 @@ set_instance_parameter_value hps_0 {EMAC1_PinMuxing} {HPS I/O Set 0}
 set_instance_parameter_value hps_0 {EMAC1_Mode} {RGMII}
 set_instance_parameter_value hps_0 {MEM_DQ_WIDTH} {32}
 
-# Bridge config
+# Bridge config: no S2F or F2S general bridges; only F2H SDRAM read-only (64-bit)
+# The FPGA reads command buffers from DDR3 via this port (command_reader.sv)
 set_instance_parameter_value hps_0 {S2F_Width} {0}
 set_instance_parameter_value hps_0 {F2S_Width} {0}
 set_instance_parameter_value hps_0 {F2SDRAM_Type} {"Avalon-MM Read-Only"}
 set_instance_parameter_value hps_0 {F2SDRAM_Width} {64}
 
+# PIO registers: HPS writes control/address/size, reads status back
 add_instance gpu_control altera_avalon_pio
-set_instance_parameter_value gpu_control {direction} {Output}
+set_instance_parameter_value gpu_control {direction} {Output}    ;# HPS -> FPGA
 set_instance_parameter_value gpu_control {width} {8}
 
 add_instance gpu_status altera_avalon_pio
-set_instance_parameter_value gpu_status {direction}    {Input}
+set_instance_parameter_value gpu_status {direction}    {Input}   ;# FPGA -> HPS
 set_instance_parameter_value gpu_status {width}        {8}
-set_instance_parameter_value gpu_status {generateIRQ}  {1}
+set_instance_parameter_value gpu_status {generateIRQ}  {1}       ;# Level-triggered IRQ (optional, polled in current software)
 set_instance_parameter_value gpu_status {irqType}      {LEVEL}
 
 add_instance cmd_addr altera_avalon_pio
-set_instance_parameter_value cmd_addr {direction} {Output}
+set_instance_parameter_value cmd_addr {direction} {Output}       ;# SDRAM address of command buffer
 set_instance_parameter_value cmd_addr {width} {32}
 
 add_instance cmd_size altera_avalon_pio
-set_instance_parameter_value cmd_size {direction} {Output}
+set_instance_parameter_value cmd_size {direction} {Output}       ;# Command size in bytes
 set_instance_parameter_value cmd_size {width} {32}
 
 # ==========================================
@@ -66,15 +78,16 @@ add_connection clk_0.clk_reset gpu_status.reset
 add_connection clk_0.clk_reset cmd_addr.reset
 add_connection clk_0.clk_reset cmd_size.reset
 
-# Data Bridge (HPS to PIO via Lightweight bridge)
+# Data Bridge: PIO registers mapped into the lightweight AXI address space
+# Software accesses these at LW_BRIDGE_BASE (0xFF200000) + offset
 add_connection hps_0.h2f_lw_axi_master gpu_control.s1
 add_connection hps_0.h2f_lw_axi_master gpu_status.s1
 add_connection hps_0.h2f_lw_axi_master cmd_addr.s1
 add_connection hps_0.h2f_lw_axi_master cmd_size.s1
-set_connection_parameter_value hps_0.h2f_lw_axi_master/cmd_addr.s1    baseAddress {0x0000}
-set_connection_parameter_value hps_0.h2f_lw_axi_master/cmd_size.s1    baseAddress {0x0010}
-set_connection_parameter_value hps_0.h2f_lw_axi_master/gpu_control.s1 baseAddress {0x0020}
-set_connection_parameter_value hps_0.h2f_lw_axi_master/gpu_status.s1  baseAddress {0x0030}
+set_connection_parameter_value hps_0.h2f_lw_axi_master/cmd_addr.s1    baseAddress {0x0000}  ;# offset 0x00
+set_connection_parameter_value hps_0.h2f_lw_axi_master/cmd_size.s1    baseAddress {0x0010}  ;# offset 0x10
+set_connection_parameter_value hps_0.h2f_lw_axi_master/gpu_control.s1 baseAddress {0x0020}  ;# offset 0x20
+set_connection_parameter_value hps_0.h2f_lw_axi_master/gpu_status.s1  baseAddress {0x0030}  ;# offset 0x30
 add_connection gpu_status.irq hps_0.f2s_interrupts_peripheral
 set_connection_parameter_value gpu_status.irq/hps_0.f2s_interrupts_peripheral irqNumber {0}
 

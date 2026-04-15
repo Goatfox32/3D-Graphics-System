@@ -1,8 +1,10 @@
 // Braden Vanderwoerd
-// 2026-04-06
+// 2026-04-13
+// Documented by Claude Opus 4.6 - 2026-04-14
 // Command Reader Module
-// This module reads commands from the SDRAM and processes them, writing results to the command and data FIFOs.
-// Note: if busy is high, the module will not accept new commands and will set the status bit accordingly.
+// Reads GPU commands from SDRAM via the Avalon-MM F2H master interface and distributes
+// them into two FIFOs: a command FIFO (opcode only) and a data FIFO (vertex/sprite payloads).
+// When busy is high, the module will not accept new commands and sets the status bit accordingly.
 
 `default_nettype none
 module command_reader (
@@ -31,6 +33,7 @@ module command_reader (
     output logic [63:0]  data_buffer_data
 );
 
+    // --- Command opcodes (match the software-side protocol in comm.c)
     localparam NOP           = 8'h00,
                CLEAR         = 8'h01,
                PRESENT_FRAME = 8'h02,
@@ -52,8 +55,13 @@ module command_reader (
     logic       busy, next_busy, size_error, next_size_error;
     logic [2:0] beats_remaining, next_beats_remaining;
 
-    // --- States
-    enum logic [2:0] { IDLE, WAIT_REQ, READ_COMMAND, READ_DATA, DRAIN_DATA } 
+    // --- FSM States
+    // IDLE       : waiting for a start pulse from HPS
+    // WAIT_REQ   : burst request issued, waiting for waitrequest to deassert
+    // READ_COMMAND: first beat of burst arrives — decode the opcode
+    // READ_DATA  : subsequent beats carry vertex/sprite payload into data FIFO
+    // DRAIN_DATA : discard remaining beats for unrecognized or size-error commands
+    enum logic [2:0] { IDLE, WAIT_REQ, READ_COMMAND, READ_DATA, DRAIN_DATA }
                   state, next_state;
 
     // --- Start Edge Detection
@@ -120,15 +128,16 @@ module command_reader (
 
         case (state)
             IDLE: begin
+                // Only accept new commands when FIFOs have room (13 entries leaves space for largest command)
                 next_busy = (data_buffer_count < 5'd13) & !command_buffer_full ? 1'b0 : 1'b1;
                 if (start_pulse & (data_buffer_count < 5'd13)) begin
                     next_address = read_addr[28:0];
                     next_read    = 1'b1;
-                    next_burst   = (read_size < 8'd1) ? 8'd1 : (read_size + 8'h7) >> 3; // Ceiling round
+                    next_burst   = (read_size < 8'd1) ? 8'd1 : (read_size + 8'h7) >> 3; // Ceiling division: bytes -> 8-byte beats
 
                     next_busy            = 1'b1;
                     next_size_error      = 1'b0;
-                    next_beats_remaining = (read_size < 8'd1) ? 8'd0 : ((read_size + 8'h7) >> 3) - 1'b1; //?
+                    next_beats_remaining = (read_size < 8'd1) ? 8'd0 : ((read_size + 8'h7) >> 3) - 1'b1; // Total beats minus the command beat
 
                     next_state = WAIT_REQ;
                 end
@@ -143,8 +152,8 @@ module command_reader (
 
             READ_COMMAND: begin
                 if (avm_readdatavalid) begin
-
-                    next_state = DRAIN_DATA; // Default to draining data for unrecognized or dataless commands
+                    // First valid beat is always the command word; opcode is in the low byte
+                    next_state = DRAIN_DATA; // Default: drain remaining beats for unknown/dataless commands
                     case (avm_readdata[7:0])
                         NOP: begin // NOP
                             
@@ -161,7 +170,7 @@ module command_reader (
                             end
                         end
 
-                        PRESENT_FRAME: begin // DRAW_PIXEL command (not implemented)
+                        PRESENT_FRAME: begin // Swap front/back buffers
                             if (avm_burstcount != 8'h01) begin
                                 next_size_error = 1'b1;
                             end
@@ -172,7 +181,7 @@ module command_reader (
                             end
                         end
 
-                        DRAW_TRIANGLE: begin // DRAW_TRIANGLE command
+                        DRAW_TRIANGLE: begin // 4 beats: 1 command + 3 vertex data words
                             if (avm_burstcount != 8'h04) begin
                                 next_size_error = 1'b1;
                             end
@@ -183,7 +192,7 @@ module command_reader (
                             end
                         end
 
-                        DRAW_SPRITE: begin // DRAW_SPRITE command
+                        DRAW_SPRITE: begin // 2 beats: command (with position/color) + bitmap
                             if (avm_burstcount != 8'h02) begin
                                 next_size_error = 1'b1;
                             end
@@ -191,9 +200,10 @@ module command_reader (
                                 next_command_buffer_en   = 1'b1;
                                 next_command_buffer_data = 64'h04;
 
+                                // Sprite position/color is packed into the command word above the opcode
                                 next_data_buffer_en   = 1'b1;
                                 next_data_buffer_data = {8'h0, avm_readdata[63:8]};
-                                
+
                                 next_state = READ_DATA;
                             end
                         end
@@ -206,7 +216,7 @@ module command_reader (
             end
 
             READ_DATA: begin
-
+                // Forward each valid data beat into the data FIFO
                 if (beats_remaining == 2'b00) begin
                     next_state = DRAIN_DATA;
                 end
@@ -218,6 +228,7 @@ module command_reader (
             end
 
             DRAIN_DATA: begin
+                // Consume and discard any remaining burst beats before returning to IDLE
                 if (beats_remaining == 2'b00) begin
                     next_busy = 1'b0;
                     next_state = IDLE;
@@ -232,11 +243,11 @@ module command_reader (
         endcase
     end
 
-    // Use these for debugging
-    assign status[0] = busy; // READY/BUSY
-    assign status[1] = size_error; // SIZE_ERROR
-    assign status[2] = control[0];
-    assign status[3] = (state == WAIT_REQ) | avm_waitrequest;  // stuck indicator
+    // --- Status register (directly readable by HPS via PIO)
+    assign status[0] = busy;                                    // Bit 0: BUSY flag (polled by software before issuing commands)
+    assign status[1] = size_error;                              // Bit 1: SIZE_ERROR (burst size mismatch for command)
+    assign status[2] = control[0];                              // Bit 2: echo of start bit (debug)
+    assign status[3] = (state == WAIT_REQ) | avm_waitrequest;  // Bit 3: stall indicator (debug)
     assign status[7:4] = '0;
 
 endmodule

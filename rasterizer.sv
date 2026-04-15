@@ -1,7 +1,22 @@
 // Jacob Edwards & Braden Vanderwoerd
-// 2026-04-10
+// 2026-04-13
+// Documented by Claude Opus 4.6 - 2026-04-14
 // Rasterizer Module
-// This module ...
+// Hardware rasterizer supporting two draw modes: triangle fill and 8x8 sprite blit.
+//
+// Triangle rasterization uses incremental edge-function evaluation over a bounding box.
+// Edge coefficients (p, q, c) are precomputed in LOAD_TRIANGLE, then the scanline loop
+// in SCAN_TRIANGLE steps across pixels using only additions (no per-pixel multiplies).
+// Winding order is handled by negating coefficients when the signed area is negative.
+//
+// NOTE: Per-vertex color mixing (barycentric interpolation) was planned but is deprecated.
+// The CALC_RECIP state and associated inv_area / rcp_* registers computed a fixed-point
+// reciprocal of the triangle area for blending. This path is unused — the rasterizer
+// currently uses only the color from vertex 1 (v1) for the entire triangle. The vertex
+// data format still carries RGB for all three vertices for forward compatibility, but
+// only v1's color fields are read during SCAN_TRIANGLE.
+//
+// Sprite mode scans an 8x8 bitmask and writes the sprite color wherever a bit is set.
 
 module rasterizer #(
 	parameter int FB_WIDTH = 320,
@@ -29,7 +44,7 @@ module rasterizer #(
 
 	input  logic fb_busy
 );
-	// --- Utility functions
+	// --- Utility functions for bounding box computation
 	function automatic [X_WIDTH-1:0] max3x
 		( 
 		input [X_WIDTH-1:0] a,
@@ -82,11 +97,11 @@ module rasterizer #(
 		end
 	endfunction
 
-	localparam FRAC = 24;
+	localparam FRAC = 24; // Fixed-point fractional bits for reciprocal (deprecated color mixing)
 
 	logic next_rast_ready;
-	
-	// --- Vertex and position registers
+
+	// --- Vertex registers: each vertex is 64 bits [x(9), y(8), r(5), g(6), b(5), ...]
 	logic [63:0] v1, v2, v3, next_v1, next_v2, next_v3;
 
 	logic signed [31:0] sx1, sx2, sx3;
@@ -97,30 +112,45 @@ module rasterizer #(
 	logic [X_WIDTH-1:0] x_max, x_min, x_curr, next_x_curr;
 	logic [Y_WIDTH-1:0] y_max, y_min, y_curr, next_y_curr;
 
-	// --- Edge test calculations
+	// --- Edge function registers
+	// For each edge i: e_i(x,y) = p_i * x + q_i * y + c_i
+	// p = delta_y along edge, q = -delta_x along edge, c = cross product constant
+	// pixel_valid is true when all three edge functions are >= 0 (point inside triangle)
 	logic pixel_valid;
 
-	logic signed [31:0] area;
-	logic signed [31:0] area_n, next_area_n;
+	logic signed [31:0] area;                // Signed area of triangle (2x actual area)
+	logic signed [31:0] area_n, next_area_n; // Absolute value of area (always positive)
 
 	logic signed [31:0] p1, q1, c1, p2, q2, c2, p3, q3, c3,
 						next_p1, next_q1, next_c1, next_p2, next_q2, next_c2, next_p3, next_q3, next_c3;
-	logic signed [31:0] e1_n, e2_n, e3_n, next_e1_n, next_e2_n, next_e3_n,
-						e1_row, e2_row, e3_row, next_e1_row, next_e2_row, next_e3_row;
+	logic signed [31:0] e1_n, e2_n, e3_n, next_e1_n, next_e2_n, next_e3_n,       // Current pixel edge values
+						e1_row, e2_row, e3_row, next_e1_row, next_e2_row, next_e3_row; // Saved row-start values
 
-	logic signed [24:0] inv_area, next_inv_area;
-	logic        [41:0] rcp_num, next_rcp_num;
-	logic        [41:0] rcp_quot, next_rcp_quot;
-	logic        [5:0]  rcp_bit, next_rcp_bit;
+	// --- Deprecated color mixing registers (unused — see header note)
+	logic signed [24:0] inv_area, next_inv_area;    // Fixed-point 1/area
+	logic        [41:0] rcp_num, next_rcp_num;      // Reciprocal divider numerator
+	logic        [41:0] rcp_quot, next_rcp_quot;     // Reciprocal divider quotient
+	logic        [5:0]  rcp_bit, next_rcp_bit;       // Reciprocal divider bit counter
 
 	// --- Color registers
+	// Per-vertex colors are extracted from each vertex word. Currently only v1's color
+	// is used (see mixed_color assignment in SCAN_TRIANGLE). The r2/g2/b2 and r3/g3/b3
+	// fields, along with r_mix/g_mix/b_mix and r_wide/g_wide/b_wide, are vestiges of
+	// the deprecated barycentric color interpolation and are not actively driven.
 	logic [4:0] r1, r2, r3, r_mix;
 	logic [5:0] g1, g2, g3, g_mix;
 	logic [4:0] b1, b2, b3, b_mix;
 	logic [49:0] r_wide, g_wide, b_wide;
 
-	logic [PIXEL_SIZE-1:0] mixed_color;
+	logic [PIXEL_SIZE-1:0] mixed_color; // Final 6-bit pixel color sent to frame buffer
 
+	// --- FSM States
+	// IDLE          : waiting for vertex_valid or sprite_valid
+	// LOAD_TRIANGLE : compute edge coefficients and bounding box
+	// CALC_RECIP    : iterative reciprocal for color mixing (DEPRECATED — currently skipped)
+	// SCAN_TRIANGLE : walk bounding box, test each pixel against edge functions
+	// LOAD_SPRITE   : latch sprite register and set scan start position
+	// SCAN_SPRITE   : walk 8x8 grid, write pixels where bitmap bit is set
     enum logic [2:0] { IDLE, LOAD_TRIANGLE, CALC_RECIP, SCAN_TRIANGLE, LOAD_SPRITE, SCAN_SPRITE } state, next_state;
 
 	logic next_write_en;
@@ -128,16 +158,17 @@ module rasterizer #(
 	logic [Y_WIDTH-1:0] next_write_y;
 	logic [PIXEL_SIZE-1:0] next_write_color;
 	
-	logic [127:0] sprite_reg, next_sprite_reg;
-	logic [63:0] sprite_bits;
+	// --- Sprite registers and decode
+	logic [127:0] sprite_reg, next_sprite_reg; // Latched sprite data from command executer
+	logic [63:0] sprite_bits;                  // 8x8 bitmap (1 = draw pixel)
 
-	logic [X_WIDTH-1:0] sprite_x, sprite_x_max;
-	logic [Y_WIDTH-1:0] sprite_y, sprite_y_max;
+	logic [X_WIDTH-1:0] sprite_x, sprite_x_max; // Sprite origin and right edge
+	logic [Y_WIDTH-1:0] sprite_y, sprite_y_max; // Sprite origin and bottom edge
 
-	logic [X_WIDTH-1:0] sprite_dx_full;
+	logic [X_WIDTH-1:0] sprite_dx_full; // Full-width offset from sprite origin
 	logic [Y_WIDTH-1:0] sprite_dy_full;
-	logic [2:0] sprite_dx, sprite_dy;
-	logic [5:0] sprite_idx;
+	logic [2:0] sprite_dx, sprite_dy;   // 3-bit column/row within the 8x8 grid
+	logic [5:0] sprite_idx;             // Flat index into the 64-bit bitmap
 	
 	logic [15:0] sprite_color;
 	logic [4:0] sprite_r;
@@ -307,15 +338,18 @@ module rasterizer #(
 			LOAD_TRIANGLE: begin
 				next_rast_ready = 1'b0;
 
+				// Start scan at top-left corner of bounding box
 				next_x_curr = x_min;
 				next_y_curr = y_min;
 
+				// Signed area via cross product — sign indicates winding order
 				area = sx1*(sy2 - sy3) + sx2*(sy3 - sy1) + sx3*(sy1 - sy2);
 
 				if (area == 0) begin
-					next_state = IDLE;
+					next_state = IDLE; // Degenerate triangle, skip
 				end
 				else begin
+					// Negate edge coefficients for CW winding so inside test is always >= 0
 					if (area < 0) begin
 						next_p1 = -(sy1 - sy2);
 						next_q1 = -(sx2 - sx1);
@@ -355,10 +389,12 @@ module rasterizer #(
 						next_state = SCAN_TRIANGLE;
 					end
 
+					// Save initial edge values as row start for incremental Y stepping
 					next_e1_row = next_e1_n;
 					next_e2_row = next_e2_n;
 					next_e3_row = next_e3_n;
-					
+
+					// Initialize reciprocal divider (deprecated — not entered in current flow)
 					next_rcp_num = 1 << FRAC;
 					next_rcp_quot = 0;
 					next_rcp_bit = FRAC+1;
@@ -366,8 +402,10 @@ module rasterizer #(
 
 			end
 
-			// Code for color mixing calculation -- NOT IN USE
-			CALC_RECIP: begin // Iterative divider code from Claude Opus
+			// DEPRECATED: Iterative fixed-point reciprocal for barycentric color blending.
+			// This state is never entered in the current design (LOAD_TRIANGLE transitions
+			// directly to SCAN_TRIANGLE). Retained for potential future use.
+			CALC_RECIP: begin
 				if (rcp_bit == 0) begin
 					next_inv_area = rcp_quot;
 					next_state    = SCAN_TRIANGLE;
@@ -382,13 +420,15 @@ module rasterizer #(
 			end
 				
             SCAN_TRIANGLE: begin
+				// Inside test: pixel is within the triangle when all edge functions are non-negative
 				pixel_valid = (e1_n >= 0) && (e2_n >= 0) && (e3_n >= 0);
-				
+
 				if (!fb_busy) begin
 					if (y_curr > y_max) begin
-						next_state = IDLE;
+						next_state = IDLE; // Bounding box fully scanned
 					end
 					else if(x_curr >= x_max) begin
+						// End of row: reset X to left edge, advance Y, step edge values by q (Y increment)
 						next_x_curr = x_min;
 						next_y_curr = y_curr + 1;
 
@@ -400,6 +440,7 @@ module rasterizer #(
 						next_e3_row = e3_row + q3;
 					end
 					else begin
+						// Advance X by 1, step edge values by p (X increment)
 						next_x_curr = x_curr + 1;
 						next_y_curr = y_curr;
 
@@ -409,15 +450,17 @@ module rasterizer #(
 					end
 				end
 
+				// DEPRECATED: Barycentric color interpolation (would blend v1/v2/v3 colors per pixel)
 				/*
 				r_wide = (e2_n*r1 + e3_n*r2 + e1_n*r3) * inv_area;
 				g_wide = (e2_n*g1 + e3_n*g2 + e1_n*g3) * inv_area;
 				b_wide = (e2_n*b1 + e3_n*b2 + e1_n*b3) * inv_area;
-				
+
 				r_mix = r_wide >>> FRAC;
 				g_mix = g_wide >>> FRAC;
 				b_mix = b_wide >>> FRAC;
 				*/
+				// Flat shading: use only v1's color, truncated to 6-bit (2 bits per channel)
 				mixed_color = {r1[4:3], g1[5:4], b1[4:3]};
             end
 
@@ -431,13 +474,14 @@ module rasterizer #(
 			end
 				
 			SCAN_SPRITE: begin
+				// Walk the 8x8 sprite grid left-to-right, top-to-bottom
 				if (!fb_busy) begin
 					if (y_curr > sprite_y_max) begin
-						next_state = IDLE;
+						next_state = IDLE; // All 64 pixels checked
 					end
 					else if (x_curr >= sprite_x_max) begin
-						next_x_curr = sprite_x;
-						next_y_curr = y_curr + 1'b1;
+						next_x_curr = sprite_x;      // Carriage return
+						next_y_curr = y_curr + 1'b1;  // Next row
 					end
 					else begin
 						next_x_curr = x_curr + 1'b1;
@@ -445,13 +489,16 @@ module rasterizer #(
 					end
 				end
 
+				// Sprite color truncated to 6-bit, same as triangle path
 				mixed_color = {sprite_r[4:3], sprite_g[5:4], sprite_b[4:3]};
+				// Only write pixel if the corresponding bitmap bit is set
 				pixel_valid = sprite_bits[sprite_idx] && y_curr <= sprite_y_max;
 			end
 
             default: next_state = IDLE;
         endcase
 		
+		// --- Output to frame buffer: write enable gated by busy, scan state, and pixel validity
 		next_write_en    = !fb_busy && ((state == SCAN_TRIANGLE) || (state == SCAN_SPRITE)) && pixel_valid;
 		next_write_x     = (((state == SCAN_TRIANGLE) || (state == SCAN_SPRITE)) && pixel_valid) ? x_curr : '0;
 		next_write_y     = (((state == SCAN_TRIANGLE) || (state == SCAN_SPRITE)) && pixel_valid) ? y_curr : '0;
@@ -459,8 +506,10 @@ module rasterizer #(
 
 	end
 
-	// --- Constant calculations for edge equations and colors
-	assign sx1 = $signed({1'b0,v1[8:0]});
+	// --- Vertex field extraction (continuous assignments)
+	// Vertex format: [8:0] x, [16:9] y, [21:17] r, [27:22] g, [32:28] b
+	// Sign-extended to 32 bits for signed edge equation arithmetic
+	assign sx1 = $signed({1'b0, v1[8:0]});
 	assign sx2 = $signed({1'b0, v2[8:0]});
 	assign sx3 = $signed({1'b0, v3[8:0]});
 	assign sy1 = $signed({1'b0, v1[16:9]});
@@ -469,17 +518,19 @@ module rasterizer #(
 	assign sx_curr = $signed({1'b0, x_curr});
 	assign sy_curr = $signed({1'b0, y_curr});
 
-	assign x_max = max3x(v1[8:0],v2[8:0],v3[8:0]);
-	assign x_min = min3x(v1[8:0],v2[8:0],v3[8:0]);
-	assign y_max = max3y(v1[16:9],v2[16:9],v3[16:9]);
-	assign y_min = min3y(v1[16:9],v2[16:9],v3[16:9]);
+	// Bounding box of the three vertices
+	assign x_max = max3x(v1[8:0], v2[8:0], v3[8:0]);
+	assign x_min = min3x(v1[8:0], v2[8:0], v3[8:0]);
+	assign y_max = max3y(v1[16:9], v2[16:9], v3[16:9]);
+	assign y_min = min3y(v1[16:9], v2[16:9], v3[16:9]);
 
+	// Per-vertex RGB extraction (v2/v3 colors unused in current flat-shading mode)
 	assign r1 = v1[21:17];
 	assign g1 = v1[27:22];
 	assign b1 = v1[32:28];
 	assign r2 = v2[21:17];
 	assign g2 = v2[27:22];
-	assign b2 = v2[32:28];	
+	assign b2 = v2[32:28];
 	assign r3 = v3[21:17];
 	assign g3 = v3[27:22];
 	assign b3 = v3[32:28];

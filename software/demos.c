@@ -1,5 +1,10 @@
-// demos.c
-// Visual demos.
+// Braden Vanderwoerd
+// 2026-04-13
+// Documented by Claude Opus 4.6 - 2026-04-14
+// demos.c — Visual demonstration routines for the GPU.
+// Each demo runs in a frame loop until any key is pressed.
+// Includes: full showcase demo, spinning 3D cube, DVD bouncing logo,
+// Conway's Game of Life, spinning triangles, and an interactive playground.
 
 #define _POSIX_C_SOURCE 200112L
 
@@ -13,18 +18,20 @@
 #include <stdint.h>
 #include <unistd.h>
 
-#define FRAME_TARGET_US 33000   // ~30 fps cap; tune after benchmarking
+#define FRAME_TARGET_US 33000   // ~30 fps cap (33 ms per frame)
 
-/// My demo
+// --- Full showcase demo state
 static int frame;
-static uint64_t slash_sprite;
-static uint64_t solid_sprite;
-static uint64_t dot_sprite;
+static uint64_t slash_sprite;  // Smiley face divider sprite
+static uint64_t solid_sprite;  // Filled 8x8 block for color palette display
+static uint64_t dot_sprite;    // Dot for animated ellipsis
 
+// Per-frame body for the full showcase demo: spinning triangles, scrolling text,
+// animated dots, and a color palette grid.
 static void run_full_demo(void) {
     clear();
 
-    float time = frame * 0.03f;
+    float time = frame * 0.03f; // Animation time parameter
     draw_triangle(30*sin(time)    + 50, 30*cos(time)    + 200, 31,0,0, 
                   30*sin(time+7)  + 50, 30*cos(time+7)  + 200, 0,0,0, 
                   30*sin(time+10) + 50, 30*cos(time+10) + 200, 0,0,0);
@@ -231,7 +238,7 @@ static void cube_frame_body(void) {
 
         const int *c = cube_face_colors[f];
         // Quad as two triangles: (v0,v1,v2) and (v0,v2,v3).
-        // Only v1's color is used; v2/v3 colors are obsolete (no blending).
+        // Only v1's color is used by the rasterizer (flat shading; color mixing is deprecated).
         draw_triangle(sv[q[0]][0], sv[q[0]][1], c[0], c[1], c[2],
                       sv[q[1]][0], sv[q[1]][1], 0, 0, 0,
                       sv[q[2]][0], sv[q[2]][1], 0, 0, 0);

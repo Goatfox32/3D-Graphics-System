@@ -1,5 +1,8 @@
-// config.h
-// Project-wide configuration for the GPU test suite.
+// Braden Vanderwoerd
+// 2026-04-13
+// Documented by Claude Opus 4.6 - 2026-04-14
+// config.h — Project-wide constants for the GPU software.
+// Screen dimensions match the hardware frame buffer; color ranges match the 6-bit pixel format.
 
 #ifndef CONFIG_H
 #define CONFIG_H
