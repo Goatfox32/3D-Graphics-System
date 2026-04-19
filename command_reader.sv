@@ -1,4 +1,4 @@
-// Braden Vanderwoerd
+// Braden Vanderwoerd & Jacob Edwards
 // 2026-04-13
 // Documented by Claude Opus 4.6 - 2026-04-14
 // Command Reader Module
