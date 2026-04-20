@@ -1,0 +1,13 @@
+echo "---Booting Custom GPU---"
+echo "---Programming FPGA---"
+fatload mmc 0:1 $fpgadata graphics_system.rbf;
+fpga load 0 $fpgadata $filesize;
+
+echo "---Setting Env variables---"
+setenv fdtimage zImage-socfpga_cyclone5_de0_sockit.dtb;
+setenv bootimage zImage;
+run bridge_enable_handoff;
+
+echo "---Booting Linux---"
+run mmcload;
+run mmcboot;
