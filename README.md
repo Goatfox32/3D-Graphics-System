@@ -383,15 +383,6 @@ Suggested repository structure:
     ├── vga-timing-diagram.png
     └── vga-resistor-divider.png
 ```
-
-You do not need every image listed above. The strongest ones to include are:
-
-1. Main system block diagram
-2. Rasterizer diagram
-3. Frame buffer diagram
-4. Demo output photos
-5. VGA output or resistor divider diagram
-
 ---
 
 ## Building the Hardware
