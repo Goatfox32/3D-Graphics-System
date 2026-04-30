@@ -195,12 +195,6 @@ The HPS sends graphics commands to the FPGA using shared SDRAM and lightweight b
 7. The command executer decodes the command.
 8. The rasterizer or frame buffer performs the requested operation.
 
-### Command Flow Diagram
-
-This diagram shows how a C function call becomes a hardware draw operation.
-
-![HPS to FPGA command flow](images/command-flow-diagram.png)
-
 ---
 
 ## Supported Commands
@@ -374,7 +368,6 @@ Suggested repository structure:
     ├── demo-4-game-of-life.png
     ├── demo-5-moving-triangles.png
     ├── system-block-diagram.png
-    ├── command-flow-diagram.png
     ├── command-reader-diagram.png
     ├── command-executer-diagram.png
     ├── fifo-diagram.png
